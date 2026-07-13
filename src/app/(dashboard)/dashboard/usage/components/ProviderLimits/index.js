@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import ProviderIcon from "@/shared/components/ProviderIcon";
 import QuotaTable from "./QuotaTable";
+import QuotaTrackerAggregate from "./QuotaTrackerAggregate";
 import Toggle from "@/shared/components/Toggle";
 import Tooltip from "@/shared/components/Tooltip";
 import {
@@ -952,6 +953,13 @@ export default function ProviderLimits() {
           </button>
         </div>
       </div>
+
+      {/* Aggregate Quota Overview */}
+      <QuotaTrackerAggregate
+        connections={sortedConnections}
+        quotaData={quotaData}
+        providerFilter={providerFilter}
+      />
 
       {/* Provider cards: 2 columns, compact */}
       {expiringFirst && (
