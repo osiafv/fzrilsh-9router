@@ -1,8 +1,10 @@
+import { throttleRefresh } from "./throttle.js";
+
 const REFRESH_RESULT_TTL_MS = 10_000;
 const refreshDedupCache = new Map();
 
 export async function dedupRefresh(provider, oldToken, fn, log) {
-  if (!oldToken) return fn();
+  if (!oldToken) return throttleRefresh(provider, fn, log);
   const key = `${provider}:${oldToken}`;
   const hit = refreshDedupCache.get(key);
   if (hit) {
@@ -18,7 +20,7 @@ export async function dedupRefresh(provider, oldToken, fn, log) {
   }
   const promise = (async () => {
     try {
-      const result = await fn();
+      const result = await throttleRefresh(provider, fn, log);
       refreshDedupCache.set(key, { result, expiresAt: Date.now() + REFRESH_RESULT_TTL_MS });
       return result;
     } catch (err) {
