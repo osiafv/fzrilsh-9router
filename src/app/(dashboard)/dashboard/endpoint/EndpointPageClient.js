@@ -1691,7 +1691,7 @@ export default function APIPageClient({ machineId }) {
                     >
                       <span className="font-medium">{conn.provider}</span>
                       <span className="text-text-muted">/</span>
-                      <span className="font-mono">{conn.name}</span>
+                      <span className="font-mono">{conn.displayName || conn.name}</span>
                       <button
                         onClick={() => handleRemoveConnection(connId)}
                         className="hover:bg-primary/20 rounded-sm p-0.5"
@@ -2096,7 +2096,7 @@ export default function APIPageClient({ machineId }) {
                               </span>
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2">
-                                  <code className="font-mono text-sm">{conn.name}</code>
+                                  <code className="font-mono text-sm">{conn.displayName || conn.name}</code>
                                   {isAssignedToOther && (
                                     <span className="text-xs text-amber-600 dark:text-amber-400">(assigned)</span>
                                   )}

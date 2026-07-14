@@ -27,6 +27,7 @@ export async function GET(request) {
         id: conn.id,
         provider: conn.provider,
         name: conn.name || conn.email || conn.id,
+        displayName: conn.displayName || conn.name || conn.email || conn.id,
         email: conn.email,
         authType: conn.authType,
         assignedToApiKeyId: conn.assignedToApiKeyId,
