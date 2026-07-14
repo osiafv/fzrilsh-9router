@@ -2012,7 +2012,7 @@ export default function APIPageClient({ machineId }) {
         }}
         title="Select Connections"
       >
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-3 min-h-0">
           <Input
             placeholder="Search by name or provider..."
             value={connectionSearchQuery}
@@ -2022,7 +2022,7 @@ export default function APIPageClient({ machineId }) {
           {availableConnections.length === 0 ? (
             <p className="text-sm text-text-muted text-center py-4">No connections available</p>
           ) : (
-            <div className="flex flex-col gap-2 max-h-[400px] overflow-y-auto">
+            <div className="flex flex-col gap-2 max-h-[400px] min-h-0 overflow-y-auto">
               {/* Accordion by provider */}
               {Object.entries(
                 availableConnections
