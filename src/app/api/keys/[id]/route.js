@@ -69,10 +69,32 @@ export async function PUT(request, { params }) {
         }
       }
 
-      // Assign new connections
+      // Assign new connections with validation
       const currentlyAssignedSet = new Set(currentlyAssigned.map(c => c.id));
+
+      // Get all connections to validate existence and assignment status
+      const allConnections = await getProviderConnections({});
+      const connMap = new Map(allConnections.map(c => [c.id, c]));
+
       for (const connId of allocatedConnectionIds) {
         if (!currentlyAssignedSet.has(connId)) {
+          // Validate connection exists
+          const existingConn = connMap.get(connId);
+          if (!existingConn) {
+            return NextResponse.json(
+              { error: `Connection ${connId} not found` },
+              { status: 400 }
+            );
+          }
+
+          // Validate connection is not assigned to another API key
+          if (existingConn.assignedToApiKeyId && existingConn.assignedToApiKeyId !== id) {
+            return NextResponse.json(
+              { error: `Connection ${connId} is already assigned to another API key` },
+              { status: 409 }
+            );
+          }
+
           await updateProviderConnection(connId, { assignedToApiKeyId: id });
         }
       }
