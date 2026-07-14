@@ -4,7 +4,6 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import PropTypes from "prop-types";
 import { Card, Button, Input, Modal, CardSkeleton, Toggle, ConfirmModal, ModelSelectModal } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
-import { parseModel } from "@/sse/services/model.js";
 import {
   TUNNEL_BENEFITS,
   TUNNEL_PING_INTERVAL_MS,
@@ -2021,17 +2020,44 @@ export default function APIPageClient({ machineId }) {
           />
 
           {(() => {
+            // Client-safe model parser (no server dependencies)
+            const parseModelProvider = (modelStr) => {
+              if (!modelStr || typeof modelStr !== 'string') return null;
+
+              // Format: provider/model or @provider/model
+              const parts = modelStr.split('/');
+              if (parts.length < 2) return null;
+
+              let providerAlias = parts[0].toLowerCase();
+
+              // Common alias mappings (must match server provider IDs)
+              const aliasMap = {
+                'kr': 'kiro',
+                '@cf': 'cloudflare',
+                'cf': 'cloudflare',
+                'ant': 'anthropic',
+                'anthropic': 'anthropic',
+                'oa': 'openai',
+                'openai': 'openai',
+                'goog': 'gemini-cli',
+                'gemini': 'gemini-cli',
+                'hf': 'huggingface',
+                'huggingface': 'huggingface',
+              };
+
+              // Remove @ prefix if exists
+              const cleanAlias = providerAlias.replace('@', '');
+
+              return aliasMap[cleanAlias] || cleanAlias;
+            };
+
             // Helper to extract providers from model strings
             const getProvidersFromModels = (modelStrings) => {
               const providers = new Set();
               for (const modelStr of modelStrings || []) {
-                try {
-                  const parsed = parseModel(modelStr);
-                  if (parsed?.provider) {
-                    providers.add(parsed.provider);
-                  }
-                } catch (e) {
-                  // Skip invalid model strings
+                const provider = parseModelProvider(modelStr);
+                if (provider) {
+                  providers.add(provider);
                 }
               }
               return Array.from(providers);
