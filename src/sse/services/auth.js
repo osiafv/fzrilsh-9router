@@ -1,4 +1,5 @@
 import { getProviderConnections, validateApiKey, updateProviderConnection, getSettings, getProxyPools } from "@/lib/localDb";
+import { getApiKeyRecord } from "../services/apiKeyLimits.js";
 import { resolveConnectionProxyConfig, pickProxyPoolId } from "@/lib/network/connectionProxy";
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
@@ -21,6 +22,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     ? excludeConnectionIds
     : (excludeConnectionIds ? new Set([excludeConnectionIds]) : new Set());
   const preferredConnectionId = options?.preferredConnectionId || null;
+  const apiKey = options?.apiKey || null;
   // Acquire mutex to prevent race conditions
   const currentMutex = selectionMutex;
   let resolveMutex;
@@ -67,8 +69,28 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       return null;
     }
 
+    // Filter by API key allocation (if API key is provided and connection allocation is enabled)
+    let filteredByApiKey = connections;
+    if (apiKey) {
+      const apiKeyRecord = await getApiKeyRecord(apiKey);
+      if (apiKeyRecord) {
+        // Check if API key has allocated connections
+        const allocatedConnections = connections.filter(c => c.assignedToApiKeyId === apiKeyRecord.id);
+
+        if (allocatedConnections.length > 0) {
+          // API key has allocated connections - use ONLY those (no global pool access)
+          filteredByApiKey = allocatedConnections;
+          log.debug("AUTH", `${provider} | using allocated connections: ${filteredByApiKey.length} available`);
+        } else {
+          // No allocated connections - use unassigned connections only (global pool)
+          filteredByApiKey = connections.filter(c => !c.assignedToApiKeyId);
+          log.debug("AUTH", `${provider} | no allocated connections, using global pool: ${filteredByApiKey.length} available`);
+        }
+      }
+    }
+
     // Filter out model-locked and excluded connections
-    const availableConnections = connections.filter(c => {
+    const availableConnections = filteredByApiKey.filter(c => {
       if (excludeSet.has(c.id)) return false;
       if (isModelLockActive(c, model)) return false;
       return true;

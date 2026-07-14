@@ -22,13 +22,14 @@ function rowToConn(row) {
     email: row.email,
     priority: row.priority,
     isActive: row.isActive === 1 || row.isActive === true,
+    assignedToApiKeyId: row.assignedToApiKeyId ?? null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
 }
 
 function connToRow(c) {
-  const { id, provider, authType, name, email, priority, isActive, createdAt, updatedAt, ...rest } = c;
+  const { id, provider, authType, name, email, priority, isActive, assignedToApiKeyId, createdAt, updatedAt, ...rest } = c;
   return {
     id,
     provider,
@@ -37,6 +38,7 @@ function connToRow(c) {
     email: email ?? null,
     priority: priority ?? null,
     isActive: isActive === false ? 0 : 1,
+    assignedToApiKeyId: assignedToApiKeyId ?? null,
     data: stringifyJson(rest),
     createdAt,
     updatedAt,
@@ -46,13 +48,13 @@ function connToRow(c) {
 function upsert(db, c) {
   const r = connToRow(c);
   db.run(
-    `INSERT INTO providerConnections(id, provider, authType, name, email, priority, isActive, data, createdAt, updatedAt)
-     VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO providerConnections(id, provider, authType, name, email, priority, isActive, assignedToApiKeyId, data, createdAt, updatedAt)
+     VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
        provider=excluded.provider, authType=excluded.authType, name=excluded.name,
        email=excluded.email, priority=excluded.priority, isActive=excluded.isActive,
-       data=excluded.data, updatedAt=excluded.updatedAt`,
-    [r.id, r.provider, r.authType, r.name, r.email, r.priority, r.isActive, r.data, r.createdAt, r.updatedAt]
+       assignedToApiKeyId=excluded.assignedToApiKeyId, data=excluded.data, updatedAt=excluded.updatedAt`,
+    [r.id, r.provider, r.authType, r.name, r.email, r.priority, r.isActive, r.assignedToApiKeyId, r.data, r.createdAt, r.updatedAt]
   );
 }
 
@@ -73,7 +75,31 @@ export async function getProviderConnections(filter = {}) {
   const params = [];
   if (filter.provider) { where.push("provider = ?"); params.push(filter.provider); }
   if (filter.isActive !== undefined) { where.push("isActive = ?"); params.push(filter.isActive ? 1 : 0); }
+  if (filter.assignedToApiKeyId !== undefined) {
+    if (filter.assignedToApiKeyId === null) {
+      where.push("assignedToApiKeyId IS NULL");
+    } else {
+      where.push("assignedToApiKeyId = ?");
+      params.push(filter.assignedToApiKeyId);
+    }
+  }
   const sql = `SELECT * FROM providerConnections${where.length ? ` WHERE ${where.join(" AND ")}` : ""}`;
+  const rows = db.all(sql, params);
+  const list = rows.map(rowToConn);
+  list.sort((a, b) => (a.priority || 999) - (b.priority || 999));
+  return list;
+}
+
+// Get connections available for a specific API key (unassigned or assigned to this key)
+export async function getAvailableConnectionsForApiKey(apiKeyId, filter = {}) {
+  const db = await getAdapter();
+  const where = ["(assignedToApiKeyId IS NULL OR assignedToApiKeyId = ?)"];
+  const params = [apiKeyId];
+
+  if (filter.provider) { where.push("provider = ?"); params.push(filter.provider); }
+  if (filter.isActive !== undefined) { where.push("isActive = ?"); params.push(filter.isActive ? 1 : 0); }
+
+  const sql = `SELECT * FROM providerConnections WHERE ${where.join(" AND ")}`;
   const rows = db.all(sql, params);
   const list = rows.map(rowToConn);
   list.sort((a, b) => (a.priority || 999) - (b.priority || 999));

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { deleteApiKey, getApiKeyById, updateApiKey } from "@/lib/localDb";
+import { deleteApiKey, getApiKeyById, updateApiKey, getProviderConnections, updateProviderConnection } from "@/lib/localDb";
 import { requireDashboardAuth, unauthorizedResponse } from "@/lib/auth/requireDashboardAuth";
 
 // GET /api/keys/[id] - Get single key
@@ -44,6 +44,7 @@ export async function PUT(request, { params }) {
       scopeType,
       allowedModels,
       allowedCombos,
+      allocatedConnectionIds, // New: array of connection IDs to allocate
     } = body;
 
     const existing = await getApiKeyById(id);
@@ -65,6 +66,50 @@ export async function PUT(request, { params }) {
     if (allowedCombos !== undefined) updateData.allowedCombos = allowedCombos;
 
     const updated = await updateApiKey(id, updateData);
+
+    // Handle connection allocation (optional feature)
+    if (allocatedConnectionIds !== undefined) {
+      // Get all connections currently assigned to this API key
+      const currentlyAssigned = await getProviderConnections({ assignedToApiKeyId: id });
+
+      // Unassign old connections (not in new list)
+      const newSet = new Set(allocatedConnectionIds);
+      for (const conn of currentlyAssigned) {
+        if (!newSet.has(conn.id)) {
+          await updateProviderConnection(conn.id, { assignedToApiKeyId: null });
+        }
+      }
+
+      // Assign new connections with validation
+      const currentlyAssignedSet = new Set(currentlyAssigned.map(c => c.id));
+
+      // Get all connections to validate existence and assignment status
+      const allConnections = await getProviderConnections({});
+      const connMap = new Map(allConnections.map(c => [c.id, c]));
+
+      for (const connId of allocatedConnectionIds) {
+        if (!currentlyAssignedSet.has(connId)) {
+          // Validate connection exists
+          const existingConn = connMap.get(connId);
+          if (!existingConn) {
+            return NextResponse.json(
+              { error: `Connection ${connId} not found` },
+              { status: 400 }
+            );
+          }
+
+          // Validate connection is not assigned to another API key
+          if (existingConn.assignedToApiKeyId && existingConn.assignedToApiKeyId !== id) {
+            return NextResponse.json(
+              { error: `Connection ${connId} is already assigned to another API key` },
+              { status: 409 }
+            );
+          }
+
+          await updateProviderConnection(connId, { assignedToApiKeyId: id });
+        }
+      }
+    }
 
     return NextResponse.json({ key: updated });
   } catch (error) {

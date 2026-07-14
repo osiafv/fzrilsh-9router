@@ -1,0 +1,15 @@
+{
+  "providers": {
+    "9router": {
+      "baseUrl": "http://localhost:20127/v1",
+      "apiKey": "sk-718d1f442f87d494-tuzkqe-dab2ee1d",
+      "api": "openai-completions",
+      "models": [
+        {
+          "id": "cf/@cf/moonshotai/kimi-k2.6",
+          "name": "kimi-k2.6"
+        }
+      ]
+    }
+  }
+}
