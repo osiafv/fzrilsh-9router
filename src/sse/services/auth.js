@@ -119,6 +119,27 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     }
     if (connection) {
       // skip strategy
+    } else if (strategy === "random-available") {
+      // Random selection from healthy (active/success) connections
+      // availableConnections already filtered out locked ones, so treat "unavailable" as "active"
+      const getEffectiveStatus = (c) => {
+        return c.testStatus === "unavailable" ? "active" : c.testStatus;
+      };
+
+      const healthyConnections = availableConnections.filter(c => {
+        const status = getEffectiveStatus(c);
+        return status === "active" || status === "success";
+      });
+
+      if (healthyConnections.length > 0) {
+        const randomIndex = Math.floor(Math.random() * healthyConnections.length);
+        connection = healthyConnections[randomIndex];
+        log.info("AUTH", `${provider} | random-available: picked ${connection.id?.slice(0, 8)} (${healthyConnections.length} healthy of ${availableConnections.length} available)`);
+      } else {
+        // Fallback to priority order if no healthy connections
+        connection = availableConnections[0];
+        log.warn("AUTH", `${provider} | random-available: no healthy connections, fallback to priority (${connection.testStatus})`);
+      }
     } else if (strategy === "round-robin") {
       const stickyLimit = providerOverride.stickyRoundRobinLimit || settings.stickyRoundRobinLimit || 3;
 
