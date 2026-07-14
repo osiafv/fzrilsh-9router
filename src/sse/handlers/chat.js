@@ -7,6 +7,7 @@ import {
   extractApiKey,
   isValidApiKey,
 } from "../services/auth.js";
+import { validateApiKeyAccess, trackApiKeyUsage } from "../services/apiKeyLimits.js";
 import { cacheClaudeHeaders } from "open-sse/utils/claudeHeaderCache.js";
 import { getSettings } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
@@ -79,6 +80,19 @@ export async function handleChat(request, clientRawRequest = null) {
   if (!modelStr) {
     log.warn("CHAT", "Missing model");
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
+  }
+
+  // Check API key scope and limits (if API key is provided)
+  if (apiKey) {
+    const accessCheck = await validateApiKeyAccess(apiKey, modelStr);
+    if (!accessCheck.allowed) {
+      log.warn("API_KEY_LIMITS", "Access denied", {
+        apiKey: log.maskKey(apiKey),
+        model: modelStr,
+        error: accessCheck.error
+      });
+      return errorResponse(HTTP_STATUS.TOO_MANY_REQUESTS, accessCheck.error);
+    }
   }
 
   // Bypass naming/warmup requests before combo rotation to avoid wasting rotation slots

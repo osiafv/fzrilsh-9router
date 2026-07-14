@@ -21,7 +21,19 @@ export async function PUT(request, { params }) {
   try {
     const { id } = await params;
     const body = await request.json();
-    const { isActive } = body;
+    const {
+      name,
+      isActive,
+      tokenLimit,
+      requestLimit,
+      tokensUsed,
+      requestsUsed,
+      resetPeriod,
+      customResetDays,
+      scopeType,
+      allowedModels,
+      allowedCombos,
+    } = body;
 
     const existing = await getApiKeyById(id);
     if (!existing) {
@@ -29,7 +41,17 @@ export async function PUT(request, { params }) {
     }
 
     const updateData = {};
+    if (name !== undefined) updateData.name = name;
     if (isActive !== undefined) updateData.isActive = isActive;
+    if (tokenLimit !== undefined) updateData.tokenLimit = tokenLimit;
+    if (requestLimit !== undefined) updateData.requestLimit = requestLimit;
+    if (tokensUsed !== undefined) updateData.tokensUsed = tokensUsed;
+    if (requestsUsed !== undefined) updateData.requestsUsed = requestsUsed;
+    if (resetPeriod !== undefined) updateData.resetPeriod = resetPeriod;
+    if (customResetDays !== undefined) updateData.customResetDays = customResetDays;
+    if (scopeType !== undefined) updateData.scopeType = scopeType;
+    if (allowedModels !== undefined) updateData.allowedModels = allowedModels;
+    if (allowedCombos !== undefined) updateData.allowedCombos = allowedCombos;
 
     const updated = await updateApiKey(id, updateData);
 

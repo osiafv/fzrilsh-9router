@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import PropTypes from "prop-types";
-import { Card, Button, Input, Modal, CardSkeleton, Toggle, ConfirmModal } from "@/shared/components";
+import { Card, Button, Input, Modal, CardSkeleton, Toggle, ConfirmModal, ModelSelectModal } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import {
   TUNNEL_BENEFITS,
@@ -24,6 +24,27 @@ export default function APIPageClient({ machineId }) {
   const [newKeyName, setNewKeyName] = useState("");
   const [createdKey, setCreatedKey] = useState(null);
   const [confirmState, setConfirmState] = useState(null);
+
+  // API key form state (for create/edit)
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [selectedKey, setSelectedKey] = useState(null);
+  const [keyForm, setKeyForm] = useState({
+    name: "",
+    tokenLimit: null,
+    requestLimit: null,
+    resetPeriod: "monthly",
+    customResetDays: null,
+    scopeType: "global",
+    allowedModels: [],
+    allowedCombos: [],
+  });
+
+  // Model/combo select modals
+  const [showModelSelect, setShowModelSelect] = useState(false);
+  const [showComboSelect, setShowComboSelect] = useState(false);
+  const [activeProviders, setActiveProviders] = useState([]);
+  const [modelAliases, setModelAliases] = useState({});
+  const [combos, setCombos] = useState([]);
 
   const [requireApiKey, setRequireApiKey] = useState(false);
   const [requireLogin, setRequireLogin] = useState(true);
@@ -608,24 +629,76 @@ export default function APIPageClient({ machineId }) {
   };
 
   const handleCreateKey = async () => {
-    if (!newKeyName.trim()) return;
+    if (!keyForm.name.trim()) return;
 
     try {
+      const body = {
+        name: keyForm.name,
+        tokenLimit: keyForm.tokenLimit || null,
+        requestLimit: keyForm.requestLimit || null,
+        resetPeriod: keyForm.resetPeriod,
+        customResetDays: keyForm.customResetDays || null,
+        scopeType: keyForm.scopeType,
+        allowedModels: keyForm.allowedModels.length > 0 ? keyForm.allowedModels : null,
+        allowedCombos: keyForm.allowedCombos.length > 0 ? keyForm.allowedCombos : null,
+      };
+
       const res = await fetch("/api/keys", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newKeyName }),
+        body: JSON.stringify(body),
       });
       const data = await res.json();
 
       if (res.ok) {
         setCreatedKey(data.key);
         await fetchData();
-        setNewKeyName("");
+        // Reset form
+        setKeyForm({
+          name: "",
+          tokenLimit: null,
+          requestLimit: null,
+          resetPeriod: "monthly",
+          customResetDays: null,
+          scopeType: "global",
+          allowedModels: [],
+          allowedCombos: [],
+        });
         setShowAddModal(false);
       }
     } catch (error) {
       console.log("Error creating key:", error);
+    }
+  };
+
+  const handleUpdateKey = async () => {
+    if (!selectedKey || !keyForm.name.trim()) return;
+
+    try {
+      const body = {
+        name: keyForm.name,
+        tokenLimit: keyForm.tokenLimit || null,
+        requestLimit: keyForm.requestLimit || null,
+        resetPeriod: keyForm.resetPeriod,
+        customResetDays: keyForm.customResetDays || null,
+        scopeType: keyForm.scopeType,
+        allowedModels: keyForm.allowedModels.length > 0 ? keyForm.allowedModels : null,
+        allowedCombos: keyForm.allowedCombos.length > 0 ? keyForm.allowedCombos : null,
+      };
+
+      const res = await fetch(`/api/keys/${selectedKey.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      if (res.ok) {
+        await fetchData();
+        setShowEditModal(false);
+        setSelectedKey(null);
+      }
+    } catch (error) {
+      console.log("Error updating key:", error);
     }
   };
 
@@ -670,6 +743,52 @@ export default function APIPageClient({ machineId }) {
   const maskKey = (fullKey) => {
     if (!fullKey || fullKey.length <= 10) return fullKey || "";
     return fullKey.slice(0, 6) + "•".repeat(fullKey.length - 10) + fullKey.slice(-4);
+  };
+
+  // Fetch data for model/combo select modals
+  const fetchModalData = async () => {
+    try {
+      const [providersRes, aliasesRes, combosRes] = await Promise.all([
+        fetch("/api/providers"),
+        fetch("/api/models/alias"),
+        fetch("/api/combos"),
+      ]);
+      if (providersRes.ok) {
+        const providersData = await providersRes.json();
+        setActiveProviders(providersData.connections || []);
+      }
+      if (aliasesRes.ok) {
+        const aliasesData = await aliasesRes.json();
+        setModelAliases(aliasesData.aliases || {});
+      }
+      if (combosRes.ok) {
+        const combosData = await combosRes.json();
+        setCombos((combosData.combos || []).filter(c => !c.kind || c.kind === "llm"));
+      }
+    } catch (error) {
+      console.error("Error fetching modal data:", error);
+    }
+  };
+
+  // Handlers for model/combo select
+  const handleAddModel = (model) => {
+    if (!keyForm.allowedModels.includes(model.value)) {
+      setKeyForm({ ...keyForm, allowedModels: [...keyForm.allowedModels, model.value] });
+    }
+  };
+
+  const handleRemoveModel = (modelValue) => {
+    setKeyForm({ ...keyForm, allowedModels: keyForm.allowedModels.filter(m => m !== modelValue) });
+  };
+
+  const handleAddCombo = (comboName) => {
+    if (!keyForm.allowedCombos.includes(comboName)) {
+      setKeyForm({ ...keyForm, allowedCombos: [...keyForm.allowedCombos, comboName] });
+    }
+  };
+
+  const handleRemoveCombo = (comboName) => {
+    setKeyForm({ ...keyForm, allowedCombos: keyForm.allowedCombos.filter(c => c !== comboName) });
   };
 
   const toggleKeyVisibility = (keyId) => {
@@ -1027,8 +1146,78 @@ export default function APIPageClient({ machineId }) {
                   {key.isActive === false && (
                     <p className="text-xs text-orange-500 mt-1">Paused</p>
                   )}
+
+                  {/* Usage stats */}
+                  {(key.tokenLimit || key.requestLimit) && (
+                    <div className="mt-2 space-y-1.5">
+                      {key.tokenLimit && (
+                        <div>
+                          <div className="flex items-center justify-between text-xs mb-0.5">
+                            <span className="text-text-muted">Tokens</span>
+                            <span className={`font-medium ${(key.tokensUsed / key.tokenLimit) > 0.9 ? 'text-red-500' : (key.tokensUsed / key.tokenLimit) > 0.7 ? 'text-amber-500' : 'text-text-main'}`}>
+                              {key.tokensUsed.toLocaleString()} / {key.tokenLimit.toLocaleString()}
+                            </span>
+                          </div>
+                          <div className="h-1.5 w-full bg-black/5 dark:bg-white/5 rounded-full overflow-hidden">
+                            <div
+                              className={`h-full transition-all ${(key.tokensUsed / key.tokenLimit) > 0.9 ? 'bg-red-500' : (key.tokensUsed / key.tokenLimit) > 0.7 ? 'bg-amber-500' : 'bg-green-500'}`}
+                              style={{ width: `${Math.min(100, (key.tokensUsed / key.tokenLimit) * 100)}%` }}
+                            />
+                          </div>
+                        </div>
+                      )}
+                      {key.requestLimit && (
+                        <div>
+                          <div className="flex items-center justify-between text-xs mb-0.5">
+                            <span className="text-text-muted">Requests</span>
+                            <span className={`font-medium ${(key.requestsUsed / key.requestLimit) > 0.9 ? 'text-red-500' : (key.requestsUsed / key.requestLimit) > 0.7 ? 'text-amber-500' : 'text-text-main'}`}>
+                              {key.requestsUsed.toLocaleString()} / {key.requestLimit.toLocaleString()}
+                            </span>
+                          </div>
+                          <div className="h-1.5 w-full bg-black/5 dark:bg-white/5 rounded-full overflow-hidden">
+                            <div
+                              className={`h-full transition-all ${(key.requestsUsed / key.requestLimit) > 0.9 ? 'bg-red-500' : (key.requestsUsed / key.requestLimit) > 0.7 ? 'bg-amber-500' : 'bg-green-500'}`}
+                              style={{ width: `${Math.min(100, (key.requestsUsed / key.requestLimit) * 100)}%` }}
+                            />
+                          </div>
+                        </div>
+                      )}
+                      {key.resetAt && (
+                        <p className="text-[10px] text-text-muted">
+                          Resets {new Date(key.resetAt).toLocaleDateString()}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  {key.scopeType === 'restricted' && (
+                    <p className="text-xs text-amber-600 dark:text-amber-400 mt-1 flex items-center gap-1">
+                      <span className="material-symbols-outlined text-[14px]">lock</span>
+                      Restricted to specific models
+                    </p>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      setSelectedKey(key);
+                      setKeyForm({
+                        name: key.name,
+                        tokenLimit: key.tokenLimit,
+                        requestLimit: key.requestLimit,
+                        resetPeriod: key.resetPeriod || 'monthly',
+                        customResetDays: key.customResetDays,
+                        scopeType: key.scopeType || 'global',
+                        allowedModels: key.allowedModels || [],
+                        allowedCombos: key.allowedCombos || [],
+                      });
+                      fetchModalData();
+                      setShowEditModal(true);
+                    }}
+                    className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
+                    title="Edit key"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">edit</span>
+                  </button>
                   <Toggle
                     size="sm"
                     checked={key.isActive ?? true}
@@ -1067,24 +1256,360 @@ export default function APIPageClient({ machineId }) {
         title="Create API Key"
         onClose={() => {
           setShowAddModal(false);
-          setNewKeyName("");
+          setKeyForm({
+            name: "",
+            tokenLimit: null,
+            requestLimit: null,
+            resetPeriod: "monthly",
+            customResetDays: null,
+            scopeType: "global",
+            allowedModels: "",
+            allowedCombos: "",
+          });
         }}
       >
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-4 max-h-[70vh] overflow-y-auto">
           <Input
             label="Key Name"
-            value={newKeyName}
-            onChange={(e) => setNewKeyName(e.target.value)}
+            value={keyForm.name}
+            onChange={(e) => setKeyForm({ ...keyForm, name: e.target.value })}
             placeholder="Production Key"
           />
+
+          <div className="grid grid-cols-2 gap-3">
+            <Input
+              label="Token Limit (optional)"
+              type="number"
+              value={keyForm.tokenLimit || ""}
+              onChange={(e) => setKeyForm({ ...keyForm, tokenLimit: e.target.value ? parseInt(e.target.value) : null })}
+              placeholder="e.g. 1000000"
+            />
+            <Input
+              label="Request Limit (optional)"
+              type="number"
+              value={keyForm.requestLimit || ""}
+              onChange={(e) => setKeyForm({ ...keyForm, requestLimit: e.target.value ? parseInt(e.target.value) : null })}
+              placeholder="e.g. 10000"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-text-main mb-1">Reset Period</label>
+              <select
+                value={keyForm.resetPeriod}
+                onChange={(e) => setKeyForm({ ...keyForm, resetPeriod: e.target.value })}
+                className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
+              >
+                <option value="daily">Daily</option>
+                <option value="monthly">Monthly</option>
+                <option value="custom">Custom</option>
+                <option value="never">Never</option>
+              </select>
+            </div>
+            {keyForm.resetPeriod === 'custom' && (
+              <Input
+                label="Custom Reset Days"
+                type="number"
+                value={keyForm.customResetDays || ""}
+                onChange={(e) => setKeyForm({ ...keyForm, customResetDays: e.target.value ? parseInt(e.target.value) : null })}
+                placeholder="e.g. 7"
+              />
+            )}
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-text-main mb-1">Access Scope</label>
+            <select
+              value={keyForm.scopeType}
+              onChange={(e) => setKeyForm({ ...keyForm, scopeType: e.target.value })}
+              className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
+            >
+              <option value="global">Global (all models)</option>
+              <option value="restricted">Restricted (specific models/combos)</option>
+            </select>
+          </div>
+
+          {keyForm.scopeType === 'restricted' && (
+            <>
+              <div>
+                <label className="block text-sm font-medium text-text-main mb-1.5">Allowed Models</label>
+                {keyForm.allowedModels.length === 0 ? (
+                  <div className="text-center py-3 border border-dashed border-black/10 dark:border-white/10 rounded-lg bg-black/[0.01] dark:bg-white/[0.01]">
+                    <p className="text-xs text-text-muted">No models selected</p>
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5 p-2 border border-border rounded-lg bg-surface-1 mb-2">
+                    {keyForm.allowedModels.map((model) => (
+                      <span
+                        key={model}
+                        className="inline-flex items-center gap-1 rounded bg-primary/10 px-2 py-1 font-mono text-xs text-primary"
+                      >
+                        {model}
+                        <button
+                          onClick={() => handleRemoveModel(model)}
+                          className="hover:bg-primary/20 rounded-sm p-0.5"
+                        >
+                          <span className="material-symbols-outlined text-[14px]">close</span>
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <button
+                  onClick={() => {
+                    fetchModalData();
+                    setShowModelSelect(true);
+                  }}
+                  type="button"
+                  className="w-full mt-1 py-2 border border-dashed border-black/10 dark:border-white/10 rounded-lg text-xs text-primary font-medium hover:border-primary/50 transition-colors flex items-center justify-center gap-1"
+                >
+                  <span className="material-symbols-outlined text-[16px]">add</span>
+                  Add Model
+                </button>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-text-main mb-1.5">Allowed Combos</label>
+                {keyForm.allowedCombos.length === 0 ? (
+                  <div className="text-center py-3 border border-dashed border-black/10 dark:border-white/10 rounded-lg bg-black/[0.01] dark:bg-white/[0.01]">
+                    <p className="text-xs text-text-muted">No combos selected</p>
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5 p-2 border border-border rounded-lg bg-surface-1 mb-2">
+                    {keyForm.allowedCombos.map((combo) => (
+                      <span
+                        key={combo}
+                        className="inline-flex items-center gap-1 rounded bg-primary/10 px-2 py-1 font-mono text-xs text-primary"
+                      >
+                        {combo}
+                        <button
+                          onClick={() => handleRemoveCombo(combo)}
+                          className="hover:bg-primary/20 rounded-sm p-0.5"
+                        >
+                          <span className="material-symbols-outlined text-[14px]">close</span>
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <button
+                  onClick={() => {
+                    fetchModalData();
+                    setShowComboSelect(true);
+                  }}
+                  type="button"
+                  className="w-full mt-1 py-2 border border-dashed border-black/10 dark:border-white/10 rounded-lg text-xs text-primary font-medium hover:border-primary/50 transition-colors flex items-center justify-center gap-1"
+                >
+                  <span className="material-symbols-outlined text-[16px]">add</span>
+                  Add Combo
+                </button>
+              </div>
+            </>
+          )}
+
           <div className="flex gap-2">
-            <Button onClick={handleCreateKey} fullWidth disabled={!newKeyName.trim()}>
+            <Button onClick={handleCreateKey} fullWidth disabled={!keyForm.name.trim()}>
               Create
             </Button>
             <Button
               onClick={() => {
                 setShowAddModal(false);
-                setNewKeyName("");
+                setKeyForm({
+                  name: "",
+                  tokenLimit: null,
+                  requestLimit: null,
+                  resetPeriod: "monthly",
+                  customResetDays: null,
+                  scopeType: "global",
+                  allowedModels: [],
+                  allowedCombos: [],
+                });
+              }}
+              variant="ghost"
+              fullWidth
+            >
+              Cancel
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Edit Key Modal */}
+      <Modal
+        isOpen={showEditModal}
+        title="Edit API Key"
+        onClose={() => {
+          setShowEditModal(false);
+          setSelectedKey(null);
+          setKeyForm({
+            name: "",
+            tokenLimit: null,
+            requestLimit: null,
+            resetPeriod: "monthly",
+            customResetDays: null,
+            scopeType: "global",
+            allowedModels: "",
+            allowedCombos: "",
+          });
+        }}
+      >
+        <div className="flex flex-col gap-4 max-h-[70vh] overflow-y-auto">
+          <Input
+            label="Key Name"
+            value={keyForm.name}
+            onChange={(e) => setKeyForm({ ...keyForm, name: e.target.value })}
+            placeholder="Production Key"
+          />
+
+          <div className="grid grid-cols-2 gap-3">
+            <Input
+              label="Token Limit (optional)"
+              type="number"
+              value={keyForm.tokenLimit || ""}
+              onChange={(e) => setKeyForm({ ...keyForm, tokenLimit: e.target.value ? parseInt(e.target.value) : null })}
+              placeholder="e.g. 1000000"
+            />
+            <Input
+              label="Request Limit (optional)"
+              type="number"
+              value={keyForm.requestLimit || ""}
+              onChange={(e) => setKeyForm({ ...keyForm, requestLimit: e.target.value ? parseInt(e.target.value) : null })}
+              placeholder="e.g. 10000"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-text-main mb-1">Reset Period</label>
+              <select
+                value={keyForm.resetPeriod}
+                onChange={(e) => setKeyForm({ ...keyForm, resetPeriod: e.target.value })}
+                className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
+              >
+                <option value="daily">Daily</option>
+                <option value="monthly">Monthly</option>
+                <option value="custom">Custom</option>
+                <option value="never">Never</option>
+              </select>
+            </div>
+            {keyForm.resetPeriod === 'custom' && (
+              <Input
+                label="Custom Reset Days"
+                type="number"
+                value={keyForm.customResetDays || ""}
+                onChange={(e) => setKeyForm({ ...keyForm, customResetDays: e.target.value ? parseInt(e.target.value) : null })}
+                placeholder="e.g. 7"
+              />
+            )}
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-text-main mb-1">Access Scope</label>
+            <select
+              value={keyForm.scopeType}
+              onChange={(e) => setKeyForm({ ...keyForm, scopeType: e.target.value })}
+              className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
+            >
+              <option value="global">Global (all models)</option>
+              <option value="restricted">Restricted (specific models/combos)</option>
+            </select>
+          </div>
+
+          {keyForm.scopeType === 'restricted' && (
+            <>
+              <div>
+                <label className="block text-sm font-medium text-text-main mb-1.5">Allowed Models</label>
+                {keyForm.allowedModels.length === 0 ? (
+                  <div className="text-center py-3 border border-dashed border-black/10 dark:border-white/10 rounded-lg bg-black/[0.01] dark:bg-white/[0.01]">
+                    <p className="text-xs text-text-muted">No models selected</p>
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5 p-2 border border-border rounded-lg bg-surface-1 mb-2">
+                    {keyForm.allowedModels.map((model) => (
+                      <span
+                        key={model}
+                        className="inline-flex items-center gap-1 rounded bg-primary/10 px-2 py-1 font-mono text-xs text-primary"
+                      >
+                        {model}
+                        <button
+                          onClick={() => handleRemoveModel(model)}
+                          className="hover:bg-primary/20 rounded-sm p-0.5"
+                        >
+                          <span className="material-symbols-outlined text-[14px]">close</span>
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <button
+                  onClick={() => {
+                    fetchModalData();
+                    setShowModelSelect(true);
+                  }}
+                  type="button"
+                  className="w-full mt-1 py-2 border border-dashed border-black/10 dark:border-white/10 rounded-lg text-xs text-primary font-medium hover:border-primary/50 transition-colors flex items-center justify-center gap-1"
+                >
+                  <span className="material-symbols-outlined text-[16px]">add</span>
+                  Add Model
+                </button>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-text-main mb-1.5">Allowed Combos</label>
+                {keyForm.allowedCombos.length === 0 ? (
+                  <div className="text-center py-3 border border-dashed border-black/10 dark:border-white/10 rounded-lg bg-black/[0.01] dark:bg-white/[0.01]">
+                    <p className="text-xs text-text-muted">No combos selected</p>
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5 p-2 border border-border rounded-lg bg-surface-1 mb-2">
+                    {keyForm.allowedCombos.map((combo) => (
+                      <span
+                        key={combo}
+                        className="inline-flex items-center gap-1 rounded bg-primary/10 px-2 py-1 font-mono text-xs text-primary"
+                      >
+                        {combo}
+                        <button
+                          onClick={() => handleRemoveCombo(combo)}
+                          className="hover:bg-primary/20 rounded-sm p-0.5"
+                        >
+                          <span className="material-symbols-outlined text-[14px]">close</span>
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <button
+                  onClick={() => {
+                    fetchModalData();
+                    setShowComboSelect(true);
+                  }}
+                  type="button"
+                  className="w-full mt-1 py-2 border border-dashed border-black/10 dark:border-white/10 rounded-lg text-xs text-primary font-medium hover:border-primary/50 transition-colors flex items-center justify-center gap-1"
+                >
+                  <span className="material-symbols-outlined text-[16px]">add</span>
+                  Add Combo
+                </button>
+              </div>
+            </>
+          )}
+
+          <div className="flex gap-2">
+            <Button onClick={handleUpdateKey} fullWidth disabled={!keyForm.name.trim()}>
+              Update
+            </Button>
+            <Button
+              onClick={() => {
+                setShowEditModal(false);
+                setSelectedKey(null);
+                setKeyForm({
+                  name: "",
+                  tokenLimit: null,
+                  requestLimit: null,
+                  resetPeriod: "monthly",
+                  customResetDays: null,
+                  scopeType: "global",
+                  allowedModels: [],
+                  allowedCombos: [],
+                });
               }}
               variant="ghost"
               fullWidth
@@ -1285,6 +1810,71 @@ export default function APIPageClient({ machineId }) {
         message={confirmState?.message}
         variant="danger"
       />
+
+      {/* Model Select Modal */}
+      <ModelSelectModal
+        isOpen={showModelSelect}
+        onClose={() => setShowModelSelect(false)}
+        onSelect={handleAddModel}
+        onDeselect={(model) => handleRemoveModel(model.value)}
+        activeProviders={activeProviders}
+        modelAliases={modelAliases}
+        title="Select Models"
+        addedModelValues={keyForm.allowedModels}
+        closeOnSelect={false}
+      />
+
+      {/* Combo Select Modal */}
+      <Modal
+        isOpen={showComboSelect}
+        onClose={() => setShowComboSelect(false)}
+        title="Select Combos"
+      >
+        <div className="flex flex-col gap-3">
+          {combos.length === 0 ? (
+            <p className="text-sm text-text-muted text-center py-4">No combos available</p>
+          ) : (
+            <div className="flex flex-col gap-1 max-h-[400px] overflow-y-auto">
+              {combos.map((combo) => {
+                const isSelected = keyForm.allowedCombos.includes(combo.name);
+                return (
+                  <button
+                    key={combo.name}
+                    onClick={() => {
+                      if (isSelected) {
+                        handleRemoveCombo(combo.name);
+                      } else {
+                        handleAddCombo(combo.name);
+                      }
+                    }}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-lg text-left transition-colors ${
+                      isSelected
+                        ? "bg-primary/10 text-primary border border-primary/30"
+                        : "hover:bg-surface-2 border border-transparent"
+                    }`}
+                  >
+                    <span className={`material-symbols-outlined text-[18px] ${isSelected ? "text-primary" : "text-text-muted"}`}>
+                      {isSelected ? "check_box" : "check_box_outline_blank"}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <code className="font-mono text-sm">{combo.name}</code>
+                      {combo.models && combo.models.length > 0 && (
+                        <p className="text-xs text-text-muted truncate">
+                          {combo.models.slice(0, 3).join(", ")}
+                          {combo.models.length > 3 && ` +${combo.models.length - 3} more`}
+                        </p>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          <Button onClick={() => setShowComboSelect(false)} variant="ghost" fullWidth>
+            Close
+          </Button>
+        </div>
+      </Modal>
     </div>
   );
 }

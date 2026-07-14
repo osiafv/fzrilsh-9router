@@ -19,7 +19,16 @@ export async function GET() {
 export async function POST(request) {
   try {
     const body = await request.json();
-    const { name } = body;
+    const {
+      name,
+      tokenLimit,
+      requestLimit,
+      resetPeriod,
+      customResetDays,
+      scopeType,
+      allowedModels,
+      allowedCombos,
+    } = body;
 
     if (!name) {
       return NextResponse.json({ error: "Name is required" }, { status: 400 });
@@ -27,13 +36,34 @@ export async function POST(request) {
 
     // Always get machineId from server
     const machineId = await getConsistentMachineId();
-    const apiKey = await createApiKey(name, machineId);
+
+    const options = {
+      tokenLimit: tokenLimit !== undefined ? tokenLimit : null,
+      requestLimit: requestLimit !== undefined ? requestLimit : null,
+      resetPeriod: resetPeriod || 'monthly',
+      customResetDays: customResetDays || null,
+      scopeType: scopeType || 'global',
+      allowedModels: allowedModels || null,
+      allowedCombos: allowedCombos || null,
+    };
+
+    const apiKey = await createApiKey(name, machineId, options);
 
     return NextResponse.json({
       key: apiKey.key,
       name: apiKey.name,
       id: apiKey.id,
       machineId: apiKey.machineId,
+      tokenLimit: apiKey.tokenLimit,
+      requestLimit: apiKey.requestLimit,
+      tokensUsed: apiKey.tokensUsed,
+      requestsUsed: apiKey.requestsUsed,
+      resetPeriod: apiKey.resetPeriod,
+      customResetDays: apiKey.customResetDays,
+      resetAt: apiKey.resetAt,
+      scopeType: apiKey.scopeType,
+      allowedModels: apiKey.allowedModels,
+      allowedCombos: apiKey.allowedCombos,
     }, { status: 201 });
   } catch (error) {
     console.log("Error creating key:", error);
