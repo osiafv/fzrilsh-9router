@@ -2043,6 +2043,8 @@ export default function APIPageClient({ machineId }) {
               ).map(([provider, conns]) => {
                 const isExpanded = expandedProviders.has(provider);
                 const selectedCount = conns.filter(c => keyForm.allocatedConnectionIds.includes(c.id)).length;
+                // Use nodeName for custom providers, fallback to provider ID
+                const providerDisplayName = conns[0]?.providerSpecificData?.nodeName || provider;
 
                 return (
                   <div key={provider} className="border border-border rounded-lg overflow-hidden">
@@ -2055,7 +2057,7 @@ export default function APIPageClient({ machineId }) {
                         {isExpanded ? "expand_more" : "chevron_right"}
                       </span>
                       <span className="text-sm font-semibold text-text-main uppercase tracking-wide flex-1">
-                        {provider}
+                        {providerDisplayName}
                       </span>
                       <span className="text-xs text-text-muted">
                         {conns.length} connection{conns.length !== 1 ? 's' : ''}

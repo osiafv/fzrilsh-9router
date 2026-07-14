@@ -31,6 +31,7 @@ export async function GET(request) {
         email: conn.email,
         authType: conn.authType,
         assignedToApiKeyId: conn.assignedToApiKeyId,
+        providerSpecificData: conn.providerSpecificData || {},
       });
       return acc;
     }, {});
