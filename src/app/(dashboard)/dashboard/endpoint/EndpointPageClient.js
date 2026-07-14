@@ -1341,13 +1341,14 @@ export default function APIPageClient({ machineId }) {
           });
         }}
       >
-        <div className="flex flex-col gap-4 max-h-[70vh] overflow-y-auto">
-          <Input
-            label="Key Name"
-            value={keyForm.name}
-            onChange={(e) => setKeyForm({ ...keyForm, name: e.target.value })}
-            placeholder="Production Key"
-          />
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-4 max-h-[60vh] overflow-y-auto">
+            <Input
+              label="Key Name"
+              value={keyForm.name}
+              onChange={(e) => setKeyForm({ ...keyForm, name: e.target.value })}
+              placeholder="Production Key"
+            />
 
           <div className="grid grid-cols-2 gap-3">
             <Input
@@ -1479,6 +1480,7 @@ export default function APIPageClient({ machineId }) {
               </div>
             </>
           )}
+          </div>
 
           <div className="flex gap-2">
             <Button onClick={handleCreateKey} fullWidth disabled={!keyForm.name.trim()}>
@@ -1528,13 +1530,14 @@ export default function APIPageClient({ machineId }) {
           });
         }}
       >
-        <div className="flex flex-col gap-4 max-h-[70vh] overflow-y-auto">
-          <Input
-            label="Key Name"
-            value={keyForm.name}
-            onChange={(e) => setKeyForm({ ...keyForm, name: e.target.value })}
-            placeholder="Production Key"
-          />
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-4 max-h-[60vh] overflow-y-auto">
+            <Input
+              label="Key Name"
+              value={keyForm.name}
+              onChange={(e) => setKeyForm({ ...keyForm, name: e.target.value })}
+              placeholder="Production Key"
+            />
 
           <div className="grid grid-cols-2 gap-3">
             <Input
@@ -1716,6 +1719,7 @@ export default function APIPageClient({ machineId }) {
               <span className="material-symbols-outlined text-[16px]">add</span>
               Select Connections
             </button>
+          </div>
           </div>
 
           <div className="flex gap-2">
