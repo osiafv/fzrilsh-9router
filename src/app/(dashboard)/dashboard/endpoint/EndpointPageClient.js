@@ -2012,7 +2012,7 @@ export default function APIPageClient({ machineId }) {
         }}
         title="Select Connections"
       >
-        <div className="flex flex-col gap-3 max-h-[70vh] overflow-y-auto">
+        <div className="flex flex-col gap-3">
           <Input
             placeholder="Search by name or provider..."
             value={connectionSearchQuery}
@@ -2112,7 +2112,7 @@ export default function APIPageClient({ machineId }) {
                   : "No connections available"}
               </p>
             ) : (
-              <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-2 max-h-[60vh] overflow-y-auto">
                 {/* Accordion by provider */}
                 {Object.entries(
                   connectionsToShow
