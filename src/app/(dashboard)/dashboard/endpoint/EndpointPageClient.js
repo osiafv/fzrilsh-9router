@@ -51,6 +51,7 @@ export default function APIPageClient({ machineId }) {
   const [availableConnections, setAvailableConnections] = useState([]);
   const [showConnectionSelect, setShowConnectionSelect] = useState(false);
   const [connectionSearchQuery, setConnectionSearchQuery] = useState("");
+  const [expandedProviders, setExpandedProviders] = useState(new Set());
 
   const [requireApiKey, setRequireApiKey] = useState(false);
   const [requireLogin, setRequireLogin] = useState(true);
@@ -834,6 +835,15 @@ export default function APIPageClient({ machineId }) {
     } else {
       handleAddConnection(connectionId);
     }
+  };
+
+  const toggleProviderExpansion = (provider) => {
+    setExpandedProviders(prev => {
+      const next = new Set(prev);
+      if (next.has(provider)) next.delete(provider);
+      else next.add(provider);
+      return next;
+    });
   };
 
   const toggleKeyVisibility = (keyId) => {
@@ -2012,8 +2022,8 @@ export default function APIPageClient({ machineId }) {
           {availableConnections.length === 0 ? (
             <p className="text-sm text-text-muted text-center py-4">No connections available</p>
           ) : (
-            <div className="flex flex-col gap-3 max-h-[400px] overflow-y-auto">
-              {/* Group by provider */}
+            <div className="flex flex-col gap-2 max-h-[400px] overflow-y-auto">
+              {/* Accordion by provider */}
               {Object.entries(
                 availableConnections
                   .filter(conn => {
@@ -2030,51 +2040,79 @@ export default function APIPageClient({ machineId }) {
                     acc[conn.provider].push(conn);
                     return acc;
                   }, {})
-              ).map(([provider, conns]) => (
-                <div key={provider} className="flex flex-col gap-1">
-                  <h4 className="text-xs font-semibold text-text-muted uppercase tracking-wide px-2">
-                    {provider}
-                  </h4>
-                  {conns.map((conn) => {
-                    const isSelected = keyForm.allocatedConnectionIds.includes(conn.id);
-                    const isAssignedToOther = conn.assignedToApiKeyId && conn.assignedToApiKeyId !== selectedKey?.id;
+              ).map(([provider, conns]) => {
+                const isExpanded = expandedProviders.has(provider);
+                const selectedCount = conns.filter(c => keyForm.allocatedConnectionIds.includes(c.id)).length;
 
-                    return (
-                      <button
-                        key={conn.id}
-                        onClick={() => {
-                          if (!isAssignedToOther) {
-                            handleToggleConnection(conn.id);
-                          }
-                        }}
-                        disabled={isAssignedToOther}
-                        className={`flex items-center gap-2 px-3 py-2 rounded-lg text-left transition-colors ${
-                          isSelected
-                            ? "bg-primary/10 text-primary border border-primary/30"
-                            : isAssignedToOther
-                            ? "opacity-50 cursor-not-allowed border border-transparent"
-                            : "hover:bg-surface-2 border border-transparent"
-                        }`}
-                      >
-                        <span className={`material-symbols-outlined text-[18px] ${isSelected ? "text-primary" : "text-text-muted"}`}>
-                          {isSelected ? "check_box" : "check_box_outline_blank"}
-                        </span>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <code className="font-mono text-sm">{conn.name}</code>
-                            {isAssignedToOther && (
-                              <span className="text-xs text-amber-600 dark:text-amber-400">(assigned)</span>
-                            )}
-                          </div>
-                          {conn.email && (
-                            <p className="text-xs text-text-muted truncate">{conn.email}</p>
-                          )}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              ))}
+                return (
+                  <div key={provider} className="border border-border rounded-lg overflow-hidden">
+                    {/* Accordion Header */}
+                    <button
+                      onClick={() => toggleProviderExpansion(provider)}
+                      className="w-full flex items-center gap-2 px-3 py-2 bg-surface-1 hover:bg-surface-2 transition-colors text-left"
+                    >
+                      <span className="material-symbols-outlined text-[16px] text-text-muted">
+                        {isExpanded ? "expand_more" : "chevron_right"}
+                      </span>
+                      <span className="text-sm font-semibold text-text-main uppercase tracking-wide flex-1">
+                        {provider}
+                      </span>
+                      <span className="text-xs text-text-muted">
+                        {conns.length} connection{conns.length !== 1 ? 's' : ''}
+                        {selectedCount > 0 && (
+                          <span className="text-primary font-medium ml-1">
+                            ({selectedCount} selected)
+                          </span>
+                        )}
+                      </span>
+                    </button>
+
+                    {/* Accordion Content */}
+                    {isExpanded && (
+                      <div className="flex flex-col gap-1 p-2 bg-background">
+                        {conns.map((conn) => {
+                          const isSelected = keyForm.allocatedConnectionIds.includes(conn.id);
+                          const isAssignedToOther = conn.assignedToApiKeyId && conn.assignedToApiKeyId !== selectedKey?.id;
+
+                          return (
+                            <button
+                              key={conn.id}
+                              onClick={() => {
+                                if (!isAssignedToOther) {
+                                  handleToggleConnection(conn.id);
+                                }
+                              }}
+                              disabled={isAssignedToOther}
+                              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-left transition-colors ${
+                                isSelected
+                                  ? "bg-primary/10 text-primary border border-primary/30"
+                                  : isAssignedToOther
+                                  ? "opacity-50 cursor-not-allowed border border-transparent"
+                                  : "hover:bg-surface-2 border border-transparent"
+                              }`}
+                            >
+                              <span className={`material-symbols-outlined text-[18px] ${isSelected ? "text-primary" : "text-text-muted"}`}>
+                                {isSelected ? "check_box" : "check_box_outline_blank"}
+                              </span>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <code className="font-mono text-sm">{conn.name}</code>
+                                  {isAssignedToOther && (
+                                    <span className="text-xs text-amber-600 dark:text-amber-400">(assigned)</span>
+                                  )}
+                                </div>
+                                {conn.email && (
+                                  <p className="text-xs text-text-muted truncate">{conn.email}</p>
+                                )}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
           <Button onClick={() => {
