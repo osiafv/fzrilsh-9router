@@ -2094,12 +2094,10 @@ export default function APIPageClient({ machineId }) {
                   // Include if provider matches built-in allowed providers
                   if (allowedProviders.has(c.provider)) return true;
 
-                  // Include ALL custom providers if user has any custom models
-                  // (can't match prefix without server data)
-                  if (hasCustomModels) {
-                    if (c.provider.startsWith('openai-compatible-')) return true;
-                    if (c.provider.startsWith('anthropic-compatible-')) return true;
-                    if (c.provider.startsWith('custom-embedding-')) return true;
+                  // For custom providers: match by customPrefix
+                  if (hasCustomModels && c.customPrefix) {
+                    // Check if this custom provider's prefix matches any allowed model prefix
+                    return allowedProviders.has(c.customPrefix);
                   }
 
                   return false;

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getProviderConnections, getAvailableConnectionsForApiKey } from "@/lib/localDb";
+import { getProviderConnections, getAvailableConnectionsForApiKey, getProviderNodes } from "@/lib/localDb";
 
 export const dynamic = "force-dynamic";
 
@@ -20,9 +20,23 @@ export async function GET(request) {
       connections = await getProviderConnections({ isActive: true, assignedToApiKeyId: null });
     }
 
+    // Get custom provider nodes to extract prefixes
+    const customNodes = await getProviderNodes({ type: ["openai-compatible", "anthropic-compatible"] });
+    const nodeMap = new Map(customNodes.map(n => [n.id, n]));
+
     // Group by provider for easier UI rendering
     const grouped = connections.reduce((acc, conn) => {
       if (!acc[conn.provider]) acc[conn.provider] = [];
+
+      // For custom providers, extract prefix from provider node
+      let customPrefix = null;
+      if (conn.provider.startsWith('openai-compatible-') ||
+          conn.provider.startsWith('anthropic-compatible-') ||
+          conn.provider.startsWith('custom-embedding-')) {
+        const node = nodeMap.get(conn.provider);
+        customPrefix = node?.prefix || null;
+      }
+
       acc[conn.provider].push({
         id: conn.id,
         provider: conn.provider,
@@ -32,6 +46,7 @@ export async function GET(request) {
         authType: conn.authType,
         assignedToApiKeyId: conn.assignedToApiKeyId,
         providerSpecificData: conn.providerSpecificData || {},
+        customPrefix, // For matching custom provider models
       });
       return acc;
     }, {});
