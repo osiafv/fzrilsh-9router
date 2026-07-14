@@ -10,10 +10,12 @@ export async function GET(request) {
     const provider = searchParams.get("provider");
     const isActive = searchParams.get("isActive");
     const assignedOnly = searchParams.get("assignedOnly");
+    const assignedToApiKeyId = searchParams.get("assignedToApiKeyId");
 
     const filter = {};
     if (provider) filter.provider = provider;
     if (isActive !== null) filter.isActive = isActive === "true";
+    if (assignedToApiKeyId) filter.assignedToApiKeyId = assignedToApiKeyId;
     // ponytail: assignedOnly filter - when we need filtering by "has assignment" not specific key
     if (assignedOnly === "true") {
       // Will need to filter after fetch since schema doesn't support "NOT NULL" filter

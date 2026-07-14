@@ -1366,36 +1366,43 @@ export default function APIPageClient({ machineId }) {
                 <div className="flex items-center gap-2">
                   <button
                     onClick={async () => {
+                      // Open modal immediately for better UX
                       setSelectedKey(key);
+                      setShowEditModal(true);
 
-                      // Fetch allocated connections for this key
+                      // Set initial form with empty connections (will load async)
+                      setKeyForm({
+                        name: key.name,
+                        tokenLimit: key.tokenLimit,
+                        requestLimit: key.requestLimit,
+                        resetPeriod: key.resetPeriod || 'monthly',
+                        customResetDays: key.customResetDays,
+                        scopeType: key.scopeType || 'global',
+                        allowedModels: key.allowedModels || [],
+                        allowedCombos: key.allowedCombos || [],
+                        allocatedConnectionIds: [], // Will be populated below
+                      });
+
+                      // Fetch data in background (modal already open)
+                      fetchModalData();
+                      fetchAvailableConnections(key.id);
+
+                      // Fetch only assigned connections for this key (not all 2k)
                       try {
-                        const connRes = await fetch(`/api/connections?isActive=true`);
+                        const connRes = await fetch(`/api/connections?assignedToApiKeyId=${key.id}`);
                         if (connRes.ok) {
                           const connData = await connRes.json();
-                          const allocated = connData.connections
-                            .filter(c => c.assignedToApiKeyId === key.id)
-                            .map(c => c.id);
+                          const allocated = connData.connections.map(c => c.id);
 
-                          setKeyForm({
-                            name: key.name,
-                            tokenLimit: key.tokenLimit,
-                            requestLimit: key.requestLimit,
-                            resetPeriod: key.resetPeriod || 'monthly',
-                            customResetDays: key.customResetDays,
-                            scopeType: key.scopeType || 'global',
-                            allowedModels: key.allowedModels || [],
-                            allowedCombos: key.allowedCombos || [],
+                          // Update form with allocated connections
+                          setKeyForm(prev => ({
+                            ...prev,
                             allocatedConnectionIds: allocated,
-                          });
+                          }));
                         }
                       } catch (error) {
                         console.log("Error fetching allocated connections:", error);
                       }
-
-                      fetchModalData();
-                      fetchAvailableConnections(key.id);
-                      setShowEditModal(true);
                     }}
                     className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
                     title="Edit key"
