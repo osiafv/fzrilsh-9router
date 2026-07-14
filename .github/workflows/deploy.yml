@@ -6,40 +6,67 @@ on:
   workflow_dispatch: # Manual trigger
 
 jobs:
-  deploy:
+  build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Deploy to production server
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build application
+        run: npm run build
+
+      - name: Create deployment archive
+        run: |
+          mkdir -p deploy
+          cp -r .next deploy/
+          cp -r public deploy/ || true
+          cp package.json deploy/
+          cp package-lock.json deploy/
+          cp custom-server.js deploy/
+          cp next.config.mjs deploy/
+          cp jsconfig.json deploy/ || true
+          cd deploy && tar -czf ../deploy.tar.gz .
+
+      - name: Upload build to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: "deploy.tar.gz"
+          target: "/tmp/"
+
+      - name: Deploy on server
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            # Navigate to fork directory (create if not exists)
-            if [ ! -d ~/9router-custom ]; then
-              echo "Cloning fork for first time..."
-              cd ~
-              git clone https://github.com/fzrilsh/9router.git 9router-custom
-              cd 9router-custom
-              npm install
-              npm run build
+            # Create directory if not exists
+            mkdir -p ~/9router-custom
 
-              # Start with pm2
-              pm2 start npm --name "9router-custom" -- run start
-              pm2 save
-            else
-              echo "Updating existing deployment..."
-              cd ~/9router-custom
-              git pull origin master
-              npm install
-              npm run build
+            # Extract build
+            cd ~/9router-custom
+            tar -xzf /tmp/deploy.tar.gz
+            rm /tmp/deploy.tar.gz
 
-              # Restart pm2 (or start if not running)
-              pm2 restart 9router-custom || pm2 start npm --name "9router-custom" -- run start
-              pm2 save
-            fi
+            # Install production dependencies only
+            npm install --production
 
-            echo "Deployment complete!"
+            # Restart pm2
+            pm2 restart 9router-custom || pm2 start npm --name "9router-custom" -- run start
+            pm2 save
+
+            echo "✓ Deployment complete!"
             pm2 status 9router-custom
