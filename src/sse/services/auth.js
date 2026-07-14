@@ -74,12 +74,17 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     if (apiKey) {
       const apiKeyRecord = await getApiKeyRecord(apiKey);
       if (apiKeyRecord) {
-        // Filter: only show unassigned connections OR connections assigned to this API key
-        filteredByApiKey = connections.filter(c => {
-          return !c.assignedToApiKeyId || c.assignedToApiKeyId === apiKeyRecord.id;
-        });
-        if (filteredByApiKey.length < connections.length) {
-          log.debug("AUTH", `${provider} | filtered by API key allocation: ${filteredByApiKey.length}/${connections.length} available`);
+        // Check if API key has allocated connections
+        const allocatedConnections = connections.filter(c => c.assignedToApiKeyId === apiKeyRecord.id);
+
+        if (allocatedConnections.length > 0) {
+          // API key has allocated connections - use ONLY those (no global pool access)
+          filteredByApiKey = allocatedConnections;
+          log.debug("AUTH", `${provider} | using allocated connections: ${filteredByApiKey.length} available`);
+        } else {
+          // No allocated connections - use unassigned connections only (global pool)
+          filteredByApiKey = connections.filter(c => !c.assignedToApiKeyId);
+          log.debug("AUTH", `${provider} | no allocated connections, using global pool: ${filteredByApiKey.length} available`);
         }
       }
     }
