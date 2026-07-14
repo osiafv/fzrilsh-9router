@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import PropTypes from "prop-types";
 import { Card, Button, Input, Modal, CardSkeleton, Toggle, ConfirmModal, ModelSelectModal } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+import { parseModel } from "@/sse/services/model.js";
 import {
   TUNNEL_BENEFITS,
   TUNNEL_PING_INTERVAL_MS,
@@ -2019,28 +2020,73 @@ export default function APIPageClient({ machineId }) {
             onChange={(e) => setConnectionSearchQuery(e.target.value)}
           />
 
-          {availableConnections.length === 0 ? (
-            <p className="text-sm text-text-muted text-center py-4">No connections available</p>
-          ) : (
-            <div className="flex flex-col gap-2">
-              {/* Accordion by provider */}
-              {Object.entries(
-                availableConnections
-                  .filter(conn => {
-                    if (!connectionSearchQuery) return true;
-                    const query = connectionSearchQuery.toLowerCase();
-                    return (
-                      conn.name?.toLowerCase().includes(query) ||
-                      conn.provider?.toLowerCase().includes(query) ||
-                      conn.email?.toLowerCase().includes(query)
-                    );
-                  })
-                  .reduce((acc, conn) => {
-                    if (!acc[conn.provider]) acc[conn.provider] = [];
-                    acc[conn.provider].push(conn);
-                    return acc;
-                  }, {})
-              ).map(([provider, conns]) => {
+          {(() => {
+            // Helper to extract providers from model strings
+            const getProvidersFromModels = (modelStrings) => {
+              const providers = new Set();
+              for (const modelStr of modelStrings || []) {
+                try {
+                  const parsed = parseModel(modelStr);
+                  if (parsed?.provider) {
+                    providers.add(parsed.provider);
+                  }
+                } catch (e) {
+                  // Skip invalid model strings
+                }
+              }
+              return Array.from(providers);
+            };
+
+            // Filter connections by allowed models scope
+            let connectionsToShow = availableConnections;
+
+            if (keyForm.scopeType === 'restricted' && (keyForm.allowedModels?.length > 0 || keyForm.allowedCombos?.length > 0)) {
+              const allowedProviders = new Set();
+
+              // Extract providers from allowed models
+              if (keyForm.allowedModels?.length > 0) {
+                const modelProviders = getProvidersFromModels(keyForm.allowedModels);
+                modelProviders.forEach(p => allowedProviders.add(p));
+              }
+
+              // For combos: ideally expand to models and extract providers
+              // For now: if combos specified but no models, show all (be permissive)
+              // User can refine by also specifying models
+
+              // Filter connections to only allowed providers
+              if (allowedProviders.size > 0) {
+                connectionsToShow = availableConnections.filter(c =>
+                  allowedProviders.has(c.provider)
+                );
+              }
+            }
+
+            return connectionsToShow.length === 0 ? (
+              <p className="text-sm text-text-muted text-center py-4">
+                {keyForm.scopeType === 'restricted' && keyForm.allowedModels?.length > 0
+                  ? "No connections available for allowed models"
+                  : "No connections available"}
+              </p>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {/* Accordion by provider */}
+                {Object.entries(
+                  connectionsToShow
+                    .filter(conn => {
+                      if (!connectionSearchQuery) return true;
+                      const query = connectionSearchQuery.toLowerCase();
+                      return (
+                        conn.name?.toLowerCase().includes(query) ||
+                        conn.provider?.toLowerCase().includes(query) ||
+                        conn.email?.toLowerCase().includes(query)
+                      );
+                    })
+                    .reduce((acc, conn) => {
+                      if (!acc[conn.provider]) acc[conn.provider] = [];
+                      acc[conn.provider].push(conn);
+                      return acc;
+                    }, {})
+                ).map(([provider, conns]) => {
                 const isExpanded = expandedProviders.has(provider);
                 const selectedCount = conns.filter(c => keyForm.allocatedConnectionIds.includes(c.id)).length;
                 // Use nodeName for custom providers, fallback to provider ID
