@@ -20,9 +20,11 @@ export async function GET(request) {
       connections = await getProviderConnections({ isActive: true, assignedToApiKeyId: null });
     }
 
-    // Filter by testStatus - only show active connections (hide unavailable/errored ones)
+    // Filter by testStatus - only show active connections for selection
+    // BUT: keep already-assigned connections even if unavailable (user needs to see what's allocated)
     connections = connections.filter(c =>
-      !c.testStatus || c.testStatus === "active"
+      (!c.testStatus || c.testStatus === "active") ||
+      (apiKeyId && c.assignedToApiKeyId === apiKeyId)
     );
 
     // Get custom provider nodes to extract prefixes
