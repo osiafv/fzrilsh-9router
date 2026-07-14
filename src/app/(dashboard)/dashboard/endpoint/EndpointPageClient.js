@@ -2162,7 +2162,8 @@ export default function APIPageClient({ machineId }) {
                 );
               })}
             </div>
-          )}
+          );
+          })()}
           <Button onClick={() => {
             setShowConnectionSelect(false);
             setConnectionSearchQuery("");
