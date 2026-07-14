@@ -2169,7 +2169,7 @@ export default function APIPageClient({ machineId }) {
 
                     {/* Accordion Content */}
                     {isExpanded && (
-                      <div className="flex flex-col gap-1 p-2 bg-background">
+                      <div className="flex flex-col gap-1 p-2 bg-background max-h-[40vh] overflow-y-auto">
                         {conns.map((conn) => {
                           const isSelected = keyForm.allocatedConnectionIds.includes(conn.id);
                           const isAssignedToOther = conn.assignedToApiKeyId && conn.assignedToApiKeyId !== selectedKey?.id;
