@@ -26,15 +26,16 @@ jobs:
 
       - name: Create deployment archive
         run: |
-          mkdir -p deploy
-          cp -r .next deploy/
-          cp -r public deploy/ || true
-          cp package.json deploy/
-          cp package-lock.json deploy/
-          cp custom-server.js deploy/
-          cp next.config.mjs deploy/
-          cp jsconfig.json deploy/ || true
-          cd deploy && tar -czf ../deploy.tar.gz .
+          # Standalone mode creates .next/standalone with everything needed
+          # Copy static assets into standalone structure
+          cp -r public .next/standalone/public
+          cp -r .next/static .next/standalone/.next/static
+
+          # Copy custom-server.js (IP security wrapper)
+          cp custom-server.js .next/standalone/
+
+          # Create archive from standalone directory
+          cd .next/standalone && tar -czf ../../deploy.tar.gz .
 
       - name: Upload build to server
         uses: appleboy/scp-action@v0.1.7
@@ -55,22 +56,20 @@ jobs:
             # Create directory if not exists
             mkdir -p ~/9router-custom
 
-            # Extract build
+            # Extract standalone build
             cd ~/9router-custom
             tar -xzf /tmp/deploy.tar.gz
             rm /tmp/deploy.tar.gz
 
-            # Install production dependencies only
-            npm install --production
+            # Standalone includes minimal node_modules, no npm install needed
 
-            # Create pm2 ecosystem config (match original setup)
+            # Create pm2 ecosystem config (run custom-server.js directly)
             cat > ecosystem.config.js << 'EOF'
             module.exports = {
               apps: [{
                 name: '9router-custom',
-                script: 'npm',
-                args: 'run start',
-                cwd: '/home/${{ secrets.SERVER_USER }}/9router-custom',
+                script: 'custom-server.js',
+                cwd: process.env.HOME + '/9router-custom',
                 env: {
                   NODE_ENV: 'production',
                   PORT: 5000,
