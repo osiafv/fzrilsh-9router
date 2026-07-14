@@ -37,6 +37,7 @@ export default function APIPageClient({ machineId }) {
     scopeType: "global",
     allowedModels: [],
     allowedCombos: [],
+    allocatedConnectionIds: [],
   });
 
   // Model/combo select modals
@@ -45,6 +46,11 @@ export default function APIPageClient({ machineId }) {
   const [activeProviders, setActiveProviders] = useState([]);
   const [modelAliases, setModelAliases] = useState({});
   const [combos, setCombos] = useState([]);
+
+  // Connection allocation
+  const [availableConnections, setAvailableConnections] = useState([]);
+  const [showConnectionSelect, setShowConnectionSelect] = useState(false);
+  const [connectionSearchQuery, setConnectionSearchQuery] = useState("");
 
   const [requireApiKey, setRequireApiKey] = useState(false);
   const [requireLogin, setRequireLogin] = useState(true);
@@ -684,6 +690,7 @@ export default function APIPageClient({ machineId }) {
         scopeType: keyForm.scopeType,
         allowedModels: keyForm.allowedModels.length > 0 ? keyForm.allowedModels : null,
         allowedCombos: keyForm.allowedCombos.length > 0 ? keyForm.allowedCombos : null,
+        allocatedConnectionIds: keyForm.allocatedConnectionIds,
       };
 
       const res = await fetch(`/api/keys/${selectedKey.id}`, {
@@ -745,6 +752,19 @@ export default function APIPageClient({ machineId }) {
     return fullKey.slice(0, 6) + "•".repeat(fullKey.length - 10) + fullKey.slice(-4);
   };
 
+  // Fetch available connections for this API key
+  const fetchAvailableConnections = async (apiKeyId) => {
+    try {
+      const res = await fetch("/api/connections/available?apiKeyId=" + apiKeyId);
+      if (res.ok) {
+        const data = await res.json();
+        setAvailableConnections(data.connections || []);
+      }
+    } catch (error) {
+      console.log("Error fetching connections:", error);
+    }
+  };
+
   // Fetch data for model/combo select modals
   const fetchModalData = async () => {
     try {
@@ -789,6 +809,30 @@ export default function APIPageClient({ machineId }) {
 
   const handleRemoveCombo = (comboName) => {
     setKeyForm({ ...keyForm, allowedCombos: keyForm.allowedCombos.filter(c => c !== comboName) });
+  };
+
+  const handleAddConnection = (connectionId) => {
+    if (!keyForm.allocatedConnectionIds.includes(connectionId)) {
+      setKeyForm({
+        ...keyForm,
+        allocatedConnectionIds: [...keyForm.allocatedConnectionIds, connectionId]
+      });
+    }
+  };
+
+  const handleRemoveConnection = (connectionId) => {
+    setKeyForm({
+      ...keyForm,
+      allocatedConnectionIds: keyForm.allocatedConnectionIds.filter(id => id !== connectionId)
+    });
+  };
+
+  const handleToggleConnection = (connectionId) => {
+    if (keyForm.allocatedConnectionIds.includes(connectionId)) {
+      handleRemoveConnection(connectionId);
+    } else {
+      handleAddConnection(connectionId);
+    }
   };
 
   const toggleKeyVisibility = (keyId) => {
@@ -1198,19 +1242,36 @@ export default function APIPageClient({ machineId }) {
                 </div>
                 <div className="flex items-center gap-2">
                   <button
-                    onClick={() => {
+                    onClick={async () => {
                       setSelectedKey(key);
-                      setKeyForm({
-                        name: key.name,
-                        tokenLimit: key.tokenLimit,
-                        requestLimit: key.requestLimit,
-                        resetPeriod: key.resetPeriod || 'monthly',
-                        customResetDays: key.customResetDays,
-                        scopeType: key.scopeType || 'global',
-                        allowedModels: key.allowedModels || [],
-                        allowedCombos: key.allowedCombos || [],
-                      });
+
+                      // Fetch allocated connections for this key
+                      try {
+                        const connRes = await fetch(`/api/connections?isActive=true`);
+                        if (connRes.ok) {
+                          const connData = await connRes.json();
+                          const allocated = connData.connections
+                            .filter(c => c.assignedToApiKeyId === key.id)
+                            .map(c => c.id);
+
+                          setKeyForm({
+                            name: key.name,
+                            tokenLimit: key.tokenLimit,
+                            requestLimit: key.requestLimit,
+                            resetPeriod: key.resetPeriod || 'monthly',
+                            customResetDays: key.customResetDays,
+                            scopeType: key.scopeType || 'global',
+                            allowedModels: key.allowedModels || [],
+                            allowedCombos: key.allowedCombos || [],
+                            allocatedConnectionIds: allocated,
+                          });
+                        }
+                      } catch (error) {
+                        console.log("Error fetching allocated connections:", error);
+                      }
+
                       fetchModalData();
+                      fetchAvailableConnections(key.id);
                       setShowEditModal(true);
                     }}
                     className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
@@ -1423,6 +1484,7 @@ export default function APIPageClient({ machineId }) {
                   scopeType: "global",
                   allowedModels: [],
                   allowedCombos: [],
+                  allocatedConnectionIds: [],
                 });
               }}
               variant="ghost"
@@ -1592,6 +1654,57 @@ export default function APIPageClient({ machineId }) {
             </>
           )}
 
+          {/* Connection Allocation Section */}
+          <div>
+            <label className="block text-sm font-medium text-text-main mb-1.5">
+              Allocated Connections <span className="text-text-muted font-normal">(optional)</span>
+            </label>
+            <p className="text-xs text-text-muted mb-2">
+              Restrict this API key to specific provider connections. Leave empty to allow all connections.
+            </p>
+            {keyForm.allocatedConnectionIds.length === 0 ? (
+              <div className="text-center py-3 border border-dashed border-black/10 dark:border-white/10 rounded-lg bg-black/[0.01] dark:bg-white/[0.01]">
+                <p className="text-xs text-text-muted">No connections allocated</p>
+              </div>
+            ) : (
+              <div className="flex flex-wrap gap-1.5 p-2 border border-border rounded-lg bg-surface-1 mb-2">
+                {keyForm.allocatedConnectionIds.map((connId) => {
+                  const conn = availableConnections.find(c => c.id === connId);
+                  if (!conn) return null;
+                  return (
+                    <span
+                      key={connId}
+                      className="inline-flex items-center gap-1 rounded bg-primary/10 px-2 py-1 text-xs text-primary"
+                    >
+                      <span className="font-medium">{conn.provider}</span>
+                      <span className="text-text-muted">/</span>
+                      <span className="font-mono">{conn.name}</span>
+                      <button
+                        onClick={() => handleRemoveConnection(connId)}
+                        className="hover:bg-primary/20 rounded-sm p-0.5"
+                      >
+                        <span className="material-symbols-outlined text-[14px]">close</span>
+                      </button>
+                    </span>
+                  );
+                })}
+              </div>
+            )}
+            <button
+              onClick={() => {
+                if (selectedKey) {
+                  fetchAvailableConnections(selectedKey.id);
+                }
+                setShowConnectionSelect(true);
+              }}
+              type="button"
+              className="w-full mt-1 py-2 border border-dashed border-black/10 dark:border-white/10 rounded-lg text-xs text-primary font-medium hover:border-primary/50 transition-colors flex items-center justify-center gap-1"
+            >
+              <span className="material-symbols-outlined text-[16px]">add</span>
+              Select Connections
+            </button>
+          </div>
+
           <div className="flex gap-2">
             <Button onClick={handleUpdateKey} fullWidth disabled={!keyForm.name.trim()}>
               Update
@@ -1609,6 +1722,7 @@ export default function APIPageClient({ machineId }) {
                   scopeType: "global",
                   allowedModels: [],
                   allowedCombos: [],
+                  allocatedConnectionIds: [],
                 });
               }}
               variant="ghost"
@@ -1871,6 +1985,99 @@ export default function APIPageClient({ machineId }) {
             </div>
           )}
           <Button onClick={() => setShowComboSelect(false)} variant="ghost" fullWidth>
+            Close
+          </Button>
+        </div>
+      </Modal>
+
+      {/* Connection Select Modal */}
+      <Modal
+        isOpen={showConnectionSelect}
+        onClose={() => {
+          setShowConnectionSelect(false);
+          setConnectionSearchQuery("");
+        }}
+        title="Select Connections"
+      >
+        <div className="flex flex-col gap-3">
+          <Input
+            placeholder="Search by name or provider..."
+            value={connectionSearchQuery}
+            onChange={(e) => setConnectionSearchQuery(e.target.value)}
+          />
+
+          {availableConnections.length === 0 ? (
+            <p className="text-sm text-text-muted text-center py-4">No connections available</p>
+          ) : (
+            <div className="flex flex-col gap-3 max-h-[400px] overflow-y-auto">
+              {/* Group by provider */}
+              {Object.entries(
+                availableConnections
+                  .filter(conn => {
+                    if (!connectionSearchQuery) return true;
+                    const query = connectionSearchQuery.toLowerCase();
+                    return (
+                      conn.name?.toLowerCase().includes(query) ||
+                      conn.provider?.toLowerCase().includes(query) ||
+                      conn.email?.toLowerCase().includes(query)
+                    );
+                  })
+                  .reduce((acc, conn) => {
+                    if (!acc[conn.provider]) acc[conn.provider] = [];
+                    acc[conn.provider].push(conn);
+                    return acc;
+                  }, {})
+              ).map(([provider, conns]) => (
+                <div key={provider} className="flex flex-col gap-1">
+                  <h4 className="text-xs font-semibold text-text-muted uppercase tracking-wide px-2">
+                    {provider}
+                  </h4>
+                  {conns.map((conn) => {
+                    const isSelected = keyForm.allocatedConnectionIds.includes(conn.id);
+                    const isAssignedToOther = conn.assignedToApiKeyId && conn.assignedToApiKeyId !== selectedKey?.id;
+
+                    return (
+                      <button
+                        key={conn.id}
+                        onClick={() => {
+                          if (!isAssignedToOther) {
+                            handleToggleConnection(conn.id);
+                          }
+                        }}
+                        disabled={isAssignedToOther}
+                        className={`flex items-center gap-2 px-3 py-2 rounded-lg text-left transition-colors ${
+                          isSelected
+                            ? "bg-primary/10 text-primary border border-primary/30"
+                            : isAssignedToOther
+                            ? "opacity-50 cursor-not-allowed border border-transparent"
+                            : "hover:bg-surface-2 border border-transparent"
+                        }`}
+                      >
+                        <span className={`material-symbols-outlined text-[18px] ${isSelected ? "text-primary" : "text-text-muted"}`}>
+                          {isSelected ? "check_box" : "check_box_outline_blank"}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <code className="font-mono text-sm">{conn.name}</code>
+                            {isAssignedToOther && (
+                              <span className="text-xs text-amber-600 dark:text-amber-400">(assigned)</span>
+                            )}
+                          </div>
+                          {conn.email && (
+                            <p className="text-xs text-text-muted truncate">{conn.email}</p>
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          )}
+          <Button onClick={() => {
+            setShowConnectionSelect(false);
+            setConnectionSearchQuery("");
+          }} variant="ghost" fullWidth>
             Close
           </Button>
         </div>
