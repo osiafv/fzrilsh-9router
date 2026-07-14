@@ -21,7 +21,11 @@ export async function GET(request) {
     }
 
     // Get custom provider nodes to extract prefixes
-    const customNodes = await getProviderNodes({ type: ["openai-compatible", "anthropic-compatible"] });
+    // Must query each type separately (getProviderNodes doesn't support array)
+    const openaiNodes = await getProviderNodes({ type: "openai-compatible" });
+    const anthropicNodes = await getProviderNodes({ type: "anthropic-compatible" });
+    const embeddingNodes = await getProviderNodes({ type: "custom-embedding" });
+    const customNodes = [...openaiNodes, ...anthropicNodes, ...embeddingNodes];
     const nodeMap = new Map(customNodes.map(n => [n.id, n]));
 
     // Group by provider for easier UI rendering
