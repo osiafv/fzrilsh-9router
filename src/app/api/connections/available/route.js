@@ -28,11 +28,8 @@ export async function GET(request) {
     const customNodes = [...openaiNodes, ...anthropicNodes, ...embeddingNodes];
     const nodeMap = new Map(customNodes.map(n => [n.id, n]));
 
-    // Group by provider for easier UI rendering
-    const grouped = connections.reduce((acc, conn) => {
-      if (!acc[conn.provider]) acc[conn.provider] = [];
-
-      // For custom providers, extract prefix from provider node
+    // Add customPrefix to each connection
+    const connectionsWithPrefix = connections.map(conn => {
       let customPrefix = null;
       if (conn.provider.startsWith('openai-compatible-') ||
           conn.provider.startsWith('anthropic-compatible-') ||
@@ -41,7 +38,7 @@ export async function GET(request) {
         customPrefix = node?.prefix || null;
       }
 
-      acc[conn.provider].push({
+      return {
         id: conn.id,
         provider: conn.provider,
         name: conn.name || conn.email || conn.id,
@@ -51,11 +48,17 @@ export async function GET(request) {
         assignedToApiKeyId: conn.assignedToApiKeyId,
         providerSpecificData: conn.providerSpecificData || {},
         customPrefix, // For matching custom provider models
-      });
+      };
+    });
+
+    // Group by provider for easier UI rendering
+    const grouped = connectionsWithPrefix.reduce((acc, conn) => {
+      if (!acc[conn.provider]) acc[conn.provider] = [];
+      acc[conn.provider].push(conn);
       return acc;
     }, {});
 
-    return NextResponse.json({ connections, grouped });
+    return NextResponse.json({ connections: connectionsWithPrefix, grouped });
   } catch (error) {
     console.log("Error fetching available connections:", error);
     return NextResponse.json(
