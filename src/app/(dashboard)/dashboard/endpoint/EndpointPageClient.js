@@ -1687,12 +1687,16 @@ export default function APIPageClient({ machineId }) {
                 {keyForm.allocatedConnectionIds.map((connId) => {
                   const conn = availableConnections.find(c => c.id === connId);
                   if (!conn) return null;
+
+                  // Use nodeName for custom providers, fallback to customPrefix or provider ID
+                  const providerDisplay = conn.providerSpecificData?.nodeName || conn.customPrefix || conn.provider;
+
                   return (
                     <span
                       key={connId}
                       className="inline-flex items-center gap-1 rounded bg-primary/10 px-2 py-1 text-xs text-primary"
                     >
-                      <span className="font-medium">{conn.provider}</span>
+                      <span className="font-medium">{providerDisplay}</span>
                       <span className="text-text-muted">/</span>
                       <span className="font-mono">{conn.displayName || conn.name}</span>
                       <button
