@@ -1,4 +1,5 @@
 import { getProviderConnections, validateApiKey, updateProviderConnection, getSettings, getProxyPools } from "@/lib/localDb";
+import { getApiKeyRecord } from "../services/apiKeyLimits.js";
 import { resolveConnectionProxyConfig, pickProxyPoolId } from "@/lib/network/connectionProxy";
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
@@ -21,6 +22,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     ? excludeConnectionIds
     : (excludeConnectionIds ? new Set([excludeConnectionIds]) : new Set());
   const preferredConnectionId = options?.preferredConnectionId || null;
+  const apiKey = options?.apiKey || null;
   // Acquire mutex to prevent race conditions
   const currentMutex = selectionMutex;
   let resolveMutex;
@@ -67,8 +69,23 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       return null;
     }
 
+    // Filter by API key allocation (if API key is provided and connection allocation is enabled)
+    let filteredByApiKey = connections;
+    if (apiKey) {
+      const apiKeyRecord = await getApiKeyRecord(apiKey);
+      if (apiKeyRecord) {
+        // Filter: only show unassigned connections OR connections assigned to this API key
+        filteredByApiKey = connections.filter(c => {
+          return !c.assignedToApiKeyId || c.assignedToApiKeyId === apiKeyRecord.id;
+        });
+        if (filteredByApiKey.length < connections.length) {
+          log.debug("AUTH", `${provider} | filtered by API key allocation: ${filteredByApiKey.length}/${connections.length} available`);
+        }
+      }
+    }
+
     // Filter out model-locked and excluded connections
-    const availableConnections = connections.filter(c => {
+    const availableConnections = filteredByApiKey.filter(c => {
       if (excludeSet.has(c.id)) return false;
       if (isModelLockActive(c, model)) return false;
       return true;

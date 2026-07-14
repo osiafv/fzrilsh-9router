@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { deleteApiKey, getApiKeyById, updateApiKey } from "@/lib/localDb";
+import { deleteApiKey, getApiKeyById, updateApiKey, getProviderConnections, updateProviderConnection } from "@/lib/localDb";
 
 // GET /api/keys/[id] - Get single key
 export async function GET(request, { params }) {
@@ -33,6 +33,7 @@ export async function PUT(request, { params }) {
       scopeType,
       allowedModels,
       allowedCombos,
+      allocatedConnectionIds, // New: array of connection IDs to allocate
     } = body;
 
     const existing = await getApiKeyById(id);
@@ -54,6 +55,28 @@ export async function PUT(request, { params }) {
     if (allowedCombos !== undefined) updateData.allowedCombos = allowedCombos;
 
     const updated = await updateApiKey(id, updateData);
+
+    // Handle connection allocation (optional feature)
+    if (allocatedConnectionIds !== undefined) {
+      // Get all connections currently assigned to this API key
+      const currentlyAssigned = await getProviderConnections({ assignedToApiKeyId: id });
+
+      // Unassign old connections (not in new list)
+      const newSet = new Set(allocatedConnectionIds);
+      for (const conn of currentlyAssigned) {
+        if (!newSet.has(conn.id)) {
+          await updateProviderConnection(conn.id, { assignedToApiKeyId: null });
+        }
+      }
+
+      // Assign new connections
+      const currentlyAssignedSet = new Set(currentlyAssigned.map(c => c.id));
+      for (const connId of allocatedConnectionIds) {
+        if (!currentlyAssignedSet.has(connId)) {
+          await updateProviderConnection(connId, { assignedToApiKeyId: id });
+        }
+      }
+    }
 
     return NextResponse.json({ key: updated });
   } catch (error) {
