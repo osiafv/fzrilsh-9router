@@ -732,6 +732,7 @@ export default function APIPageClient({ machineId }) {
         scopeType: keyForm.scopeType,
         allowedModels: keyForm.allowedModels.length > 0 ? keyForm.allowedModels : null,
         allowedCombos: keyForm.allowedCombos.length > 0 ? keyForm.allowedCombos : null,
+        allocatedConnectionIds: keyForm.allocatedConnectionIds.length > 0 ? keyForm.allocatedConnectionIds : undefined,
       };
 
       const res = await fetch("/api/keys", {
@@ -841,7 +842,10 @@ export default function APIPageClient({ machineId }) {
   // Fetch available connections for this API key
   const fetchAvailableConnections = async (apiKeyId) => {
     try {
-      const res = await fetch("/api/connections/available?apiKeyId=" + apiKeyId);
+      const url = apiKeyId
+        ? `/api/connections/available?apiKeyId=${apiKeyId}`
+        : `/api/connections/available`;
+      const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
         setAvailableConnections(data.connections || []);
@@ -1599,6 +1603,59 @@ export default function APIPageClient({ machineId }) {
               </div>
             </>
           )}
+
+          {/* Connection Allocation Section */}
+          <div>
+            <label className="block text-sm font-medium text-text-main mb-1.5">
+              Allocated Connections <span className="text-text-muted font-normal">(optional)</span>
+            </label>
+            <p className="text-xs text-text-muted mb-2">
+              Restrict this API key to specific provider connections. Leave empty to allow all connections.
+            </p>
+            {keyForm.allocatedConnectionIds.length === 0 ? (
+              <div className="text-center py-3 border border-dashed border-black/10 dark:border-white/10 rounded-lg bg-black/[0.01] dark:bg-white/[0.01]">
+                <p className="text-xs text-text-muted">No connections allocated</p>
+              </div>
+            ) : (
+              <div className="flex flex-wrap gap-1.5 p-2 border border-border rounded-lg bg-surface-1 mb-2">
+                {keyForm.allocatedConnectionIds.map((connId) => {
+                  const conn = availableConnections.find(c => c.id === connId);
+                  if (!conn) return null;
+
+                  // Use nodeName for custom providers, fallback to customPrefix or provider ID
+                  const providerDisplay = conn.providerSpecificData?.nodeName || conn.customPrefix || conn.provider;
+
+                  return (
+                    <span
+                      key={connId}
+                      className="inline-flex items-center gap-1 rounded bg-primary/10 px-2 py-1 text-xs text-primary"
+                    >
+                      <span className="font-medium">{providerDisplay}</span>
+                      <span className="text-text-muted">/</span>
+                      <span className="font-mono">{conn.displayName || conn.name}</span>
+                      <button
+                        onClick={() => handleRemoveConnection(connId)}
+                        className="hover:bg-primary/20 rounded-sm p-0.5"
+                      >
+                        <span className="material-symbols-outlined text-[14px]">close</span>
+                      </button>
+                    </span>
+                  );
+                })}
+              </div>
+            )}
+            <button
+              onClick={() => {
+                fetchAvailableConnections();
+                setShowConnectionSelect(true);
+              }}
+              type="button"
+              className="w-full mt-1 py-2 border border-dashed border-black/10 dark:border-white/10 rounded-lg text-xs text-primary font-medium hover:border-primary/50 transition-colors flex items-center justify-center gap-1"
+            >
+              <span className="material-symbols-outlined text-[16px]">add</span>
+              Select Connections
+            </button>
+          </div>
           </div>
 
           <div className="flex gap-2">

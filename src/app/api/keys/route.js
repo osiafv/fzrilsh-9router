@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getApiKeys, createApiKey } from "@/lib/localDb";
+import { getApiKeys, createApiKey, getProviderConnections, updateProviderConnection } from "@/lib/localDb";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
 import { requireDashboardAuth, unauthorizedResponse } from "@/lib/auth/requireDashboardAuth";
 
@@ -39,6 +39,7 @@ export async function POST(request) {
       scopeType,
       allowedModels,
       allowedCombos,
+      allocatedConnectionIds,
     } = body;
 
     if (!name) {
@@ -59,6 +60,35 @@ export async function POST(request) {
     };
 
     const apiKey = await createApiKey(name, machineId, options);
+
+    // Handle connection allocation if provided
+    if (allocatedConnectionIds && allocatedConnectionIds.length > 0) {
+      // Get all connections to validate existence and assignment status
+      const allConnections = await getProviderConnections({});
+      const connMap = new Map(allConnections.map(c => [c.id, c]));
+
+      for (const connId of allocatedConnectionIds) {
+        // Validate connection exists
+        const existingConn = connMap.get(connId);
+        if (!existingConn) {
+          return NextResponse.json(
+            { error: `Connection ${connId} not found` },
+            { status: 400 }
+          );
+        }
+
+        // Validate connection is not assigned to another API key
+        if (existingConn.assignedToApiKeyId && existingConn.assignedToApiKeyId !== apiKey.id) {
+          return NextResponse.json(
+            { error: `Connection ${connId} is already assigned to another API key` },
+            { status: 409 }
+          );
+        }
+
+        // Assign connection to new API key
+        await updateProviderConnection(connId, { assignedToApiKeyId: apiKey.id });
+      }
+    }
 
     return NextResponse.json({
       key: apiKey.key,

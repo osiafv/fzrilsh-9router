@@ -20,6 +20,11 @@ export async function GET(request) {
       connections = await getProviderConnections({ isActive: true, assignedToApiKeyId: null });
     }
 
+    // Filter by testStatus - only show active connections (hide unavailable/errored ones)
+    connections = connections.filter(c =>
+      !c.testStatus || c.testStatus === "active"
+    );
+
     // Get custom provider nodes to extract prefixes
     // Must query each type separately (getProviderNodes doesn't support array)
     const openaiNodes = await getProviderNodes({ type: "openai-compatible" });

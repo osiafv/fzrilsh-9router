@@ -6,6 +6,7 @@ import { getUsageForProvider } from "open-sse/services/usage.js";
 import { getExecutor } from "open-sse/executors/index.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { USAGE_APIKEY_PROVIDERS } from "@/shared/constants/providers";
+import usageCache from "@/lib/cache/usageCache";
 
 // Detect auth-expired messages returned by usage providers instead of throwing
 const AUTH_EXPIRED_PATTERNS = ["expired", "authentication", "unauthorized", "401", "re-authorize"];
@@ -155,10 +156,12 @@ export async function GET(request, { params }) {
     };
 
     // Refresh credentials only for OAuth connections (apikey has no token refresh)
+    let credentialsRefreshed = false;
     if (isOAuth) {
       try {
         const result = await refreshAndUpdateCredentials(connection, false, proxyOptions);
         connection = result.connection;
+        credentialsRefreshed = result.refreshed;
       } catch (refreshError) {
         console.error("[Usage API] Credential refresh failed:", refreshError);
         return Response.json({
@@ -167,8 +170,17 @@ export async function GET(request, { params }) {
       }
     }
 
-    // Fetch usage from provider API
-    let usage = await getUsageForProvider(connection, proxyOptions);
+    // Invalidate cache if credentials just refreshed
+    if (credentialsRefreshed) {
+      usageCache.delete(connectionId);
+    }
+
+    // Fetch usage from provider API with caching (60s TTL)
+    // ponytail: cache reduces external API calls 500→~50 on dashboard load; scale ceiling: Redis for multi-instance
+    let usage = await usageCache.getOrFetch(
+      connectionId,
+      () => getUsageForProvider(connection, proxyOptions)
+    );
 
     // If provider returned an auth-expired message instead of throwing,
     // force-refresh token and retry once (OAuth only)
@@ -176,6 +188,8 @@ export async function GET(request, { params }) {
       try {
         const retryResult = await refreshAndUpdateCredentials(connection, true, proxyOptions);
         connection = retryResult.connection;
+        // Invalidate cache and fetch fresh after forced refresh
+        usageCache.delete(connectionId);
         usage = await getUsageForProvider(connection, proxyOptions);
       } catch (retryError) {
         console.warn(`[Usage] ${connection.provider}: force refresh failed: ${retryError.message}`);
