@@ -105,6 +105,9 @@ export default function APIPageClient({ machineId }) {
   // API key visibility toggle state
   const [visibleKeys, setVisibleKeys] = useState(new Set());
 
+  // Connection quota tracking for each API key
+  const [keyQuotas, setKeyQuotas] = useState({}); // {keyId: {used, total, loading, error}}
+
   // Client-side local/remote detection (UI hint only, not a security gate)
   const [isRemoteHost, setIsRemoteHost] = useState(false);
   useEffect(() => {
@@ -286,12 +289,84 @@ export default function APIPageClient({ machineId }) {
       const keysRes = await fetch("/api/keys");
       const keysData = await keysRes.json();
       if (keysRes.ok) {
-        setKeys(keysData.keys || []);
+        const keys = keysData.keys || [];
+        setKeys(keys);
+        // Fetch quota for each key
+        keys.forEach(key => fetchKeyQuota(key.id));
       }
     } catch (error) {
       console.log("Error fetching data:", error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Fetch and aggregate connection quota for a specific API key
+  const fetchKeyQuota = async (keyId) => {
+    setKeyQuotas(prev => ({...prev, [keyId]: {loading: true}}));
+
+    try {
+      // Fetch all active connections
+      const connRes = await fetch('/api/connections?isActive=true');
+      if (!connRes.ok) {
+        setKeyQuotas(prev => ({...prev, [keyId]: null}));
+        return;
+      }
+
+      const connData = await connRes.json();
+      const allocatedConns = connData.connections.filter(c => c.assignedToApiKeyId === keyId);
+
+      if (allocatedConns.length === 0) {
+        setKeyQuotas(prev => ({...prev, [keyId]: null}));
+        return;
+      }
+
+      // Fetch quota for each connection
+      const quotaPromises = allocatedConns.map(conn =>
+        fetch(`/api/usage/${conn.id}`)
+          .then(r => r.ok ? r.json() : null)
+          .catch(() => null)
+      );
+      const quotasData = await Promise.all(quotaPromises);
+
+      // Aggregate credit across all connections
+      // Different providers use different resource keys: "credit", "0", etc.
+      let totalUsed = 0;
+      let totalLimit = 0;
+      let hasData = false;
+
+      quotasData.forEach(quotaData => {
+        if (!quotaData?.quotas) return;
+
+        // Try common credit resource keys
+        const credit = quotaData.quotas.credit || quotaData.quotas["0"];
+
+        if (credit && credit.total !== undefined) {
+          totalUsed += credit.used || 0;
+          totalLimit += credit.total || 0;
+          hasData = true;
+        }
+      });
+
+      if (!hasData) {
+        setKeyQuotas(prev => ({...prev, [keyId]: null}));
+        return;
+      }
+
+      setKeyQuotas(prev => ({
+        ...prev,
+        [keyId]: {
+          used: totalUsed,
+          total: totalLimit,
+          loading: false
+        }
+      }));
+    } catch (error) {
+      console.log("Error fetching quota for key:", error);
+      setKeyQuotas(prev => ({
+        ...prev,
+        [keyId]: {error: error.message, loading: false}
+      }));
     }
   };
 
@@ -1169,10 +1244,18 @@ export default function APIPageClient({ machineId }) {
             {keys.map((key) => (
               <div
                 key={key.id}
-                className={`group flex items-center justify-between py-3 border-b border-black/[0.03] dark:border-white/[0.03] last:border-b-0 ${key.isActive === false ? "opacity-60" : ""}`}
+                className={`group flex items-center justify-between py-3 border-b border-black/10 dark:border-white/10 last:border-b-0 ${key.isActive === false ? "opacity-60" : ""}`}
               >
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium">{key.name}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-medium">{key.name}</p>
+                    {key.scopeType === 'restricted' && (
+                      <p className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1 shrink-0">
+                        <span className="material-symbols-outlined text-[14px]">lock</span>
+                        <span className="hidden sm:inline">Restricted to specific models</span>
+                      </p>
+                    )}
+                  </div>
                   <div className="flex items-center gap-2 mt-1">
                     <code className="text-xs text-text-muted font-mono">
                       {visibleKeys.has(key.id) ? key.key : maskKey(key.key)}
@@ -1197,23 +1280,26 @@ export default function APIPageClient({ machineId }) {
                   </div>
                   <p className="text-xs text-text-muted mt-1">
                     Created {new Date(key.createdAt).toLocaleDateString()}
+                    {(key.tokenLimit || key.requestLimit) && key.resetAt && (
+                      <> | Resets {new Date(key.resetAt).toLocaleDateString()}</>
+                    )}
                   </p>
                   {key.isActive === false && (
                     <p className="text-xs text-orange-500 mt-1">Paused</p>
                   )}
 
-                  {/* Usage stats */}
-                  {(key.tokenLimit || key.requestLimit) && (
-                    <div className="mt-2 space-y-1.5">
+                  {/* Usage stats - combined horizontal layout */}
+                  {(key.tokenLimit || key.requestLimit || (keyQuotas[key.id] && !keyQuotas[key.id].loading && !keyQuotas[key.id].error && keyQuotas[key.id].total > 0)) && (
+                    <div className="mt-2 flex gap-3">
                       {key.tokenLimit && (
-                        <div>
-                          <div className="flex items-center justify-between text-xs mb-0.5">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between text-[10px] mb-0.5">
                             <span className="text-text-muted">Tokens</span>
-                            <span className={`font-medium ${(key.tokensUsed / key.tokenLimit) > 0.9 ? 'text-red-500' : (key.tokensUsed / key.tokenLimit) > 0.7 ? 'text-amber-500' : 'text-text-main'}`}>
-                              {key.tokensUsed.toLocaleString()} / {key.tokenLimit.toLocaleString()}
+                            <span className={`font-medium ${(key.tokensUsed / key.tokenLimit) > 0.9 ? 'text-red-500' : (key.tokensUsed / key.tokenLimit) > 0.7 ? 'text-amber-500' : 'text-green-500'}`}>
+                              {key.tokensUsed.toLocaleString()}/{key.tokenLimit.toLocaleString()}
                             </span>
                           </div>
-                          <div className="h-1.5 w-full bg-black/5 dark:bg-white/5 rounded-full overflow-hidden">
+                          <div className="h-1 w-full bg-black/5 dark:bg-white/5 rounded-full overflow-hidden">
                             <div
                               className={`h-full transition-all ${(key.tokensUsed / key.tokenLimit) > 0.9 ? 'bg-red-500' : (key.tokensUsed / key.tokenLimit) > 0.7 ? 'bg-amber-500' : 'bg-green-500'}`}
                               style={{ width: `${Math.min(100, (key.tokensUsed / key.tokenLimit) * 100)}%` }}
@@ -1222,14 +1308,14 @@ export default function APIPageClient({ machineId }) {
                         </div>
                       )}
                       {key.requestLimit && (
-                        <div>
-                          <div className="flex items-center justify-between text-xs mb-0.5">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between text-[10px] mb-0.5">
                             <span className="text-text-muted">Requests</span>
-                            <span className={`font-medium ${(key.requestsUsed / key.requestLimit) > 0.9 ? 'text-red-500' : (key.requestsUsed / key.requestLimit) > 0.7 ? 'text-amber-500' : 'text-text-main'}`}>
-                              {key.requestsUsed.toLocaleString()} / {key.requestLimit.toLocaleString()}
+                            <span className={`font-medium ${(key.requestsUsed / key.requestLimit) > 0.9 ? 'text-red-500' : (key.requestsUsed / key.requestLimit) > 0.7 ? 'text-amber-500' : 'text-green-500'}`}>
+                              {key.requestsUsed.toLocaleString()}/{key.requestLimit.toLocaleString()}
                             </span>
                           </div>
-                          <div className="h-1.5 w-full bg-black/5 dark:bg-white/5 rounded-full overflow-hidden">
+                          <div className="h-1 w-full bg-black/5 dark:bg-white/5 rounded-full overflow-hidden">
                             <div
                               className={`h-full transition-all ${(key.requestsUsed / key.requestLimit) > 0.9 ? 'bg-red-500' : (key.requestsUsed / key.requestLimit) > 0.7 ? 'bg-amber-500' : 'bg-green-500'}`}
                               style={{ width: `${Math.min(100, (key.requestsUsed / key.requestLimit) * 100)}%` }}
@@ -1237,18 +1323,35 @@ export default function APIPageClient({ machineId }) {
                           </div>
                         </div>
                       )}
-                      {key.resetAt && (
-                        <p className="text-[10px] text-text-muted">
-                          Resets {new Date(key.resetAt).toLocaleDateString()}
-                        </p>
+                      {keyQuotas[key.id] && !keyQuotas[key.id].loading && !keyQuotas[key.id].error && keyQuotas[key.id].total > 0 && (
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between text-[10px] mb-0.5">
+                            <span className="text-text-muted">Credit</span>
+                            <span className={`font-medium ${
+                              (keyQuotas[key.id].used / keyQuotas[key.id].total) > 0.7
+                                ? 'text-red-500'
+                                : (keyQuotas[key.id].used / keyQuotas[key.id].total) > 0.3
+                                  ? 'text-amber-500'
+                                  : 'text-green-500'
+                            }`}>
+                              {keyQuotas[key.id].used.toLocaleString()}/{keyQuotas[key.id].total.toLocaleString()}
+                            </span>
+                          </div>
+                          <div className="h-1 w-full bg-black/5 dark:bg-white/5 rounded-full overflow-hidden">
+                            <div
+                              className={`h-full transition-all ${
+                                (keyQuotas[key.id].used / keyQuotas[key.id].total) > 0.7
+                                  ? 'bg-red-500'
+                                  : (keyQuotas[key.id].used / keyQuotas[key.id].total) > 0.3
+                                    ? 'bg-amber-500'
+                                    : 'bg-green-500'
+                              }`}
+                              style={{ width: `${Math.min(100, (keyQuotas[key.id].used / keyQuotas[key.id].total) * 100)}%` }}
+                            />
+                          </div>
+                        </div>
                       )}
                     </div>
-                  )}
-                  {key.scopeType === 'restricted' && (
-                    <p className="text-xs text-amber-600 dark:text-amber-400 mt-1 flex items-center gap-1">
-                      <span className="material-symbols-outlined text-[14px]">lock</span>
-                      Restricted to specific models
-                    </p>
                   )}
                 </div>
                 <div className="flex items-center gap-2">
