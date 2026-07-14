@@ -1,11 +1,17 @@
 import { NextResponse } from "next/server";
 import { getApiKeys, createApiKey } from "@/lib/localDb";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
+import { requireDashboardAuth, unauthorizedResponse } from "@/lib/auth/requireDashboardAuth";
 
 export const dynamic = "force-dynamic";
 
 // GET /api/keys - List API keys
-export async function GET() {
+export async function GET(request) {
+  const isAuthenticated = await requireDashboardAuth(request);
+  if (!isAuthenticated) {
+    return unauthorizedResponse();
+  }
+
   try {
     const keys = await getApiKeys();
     return NextResponse.json({ keys });
@@ -17,6 +23,11 @@ export async function GET() {
 
 // POST /api/keys - Create new API key
 export async function POST(request) {
+  const isAuthenticated = await requireDashboardAuth(request);
+  if (!isAuthenticated) {
+    return unauthorizedResponse();
+  }
+
   try {
     const body = await request.json();
     const {

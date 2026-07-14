@@ -4,6 +4,7 @@ import { applyOutboundProxyEnv } from "@/lib/network/outboundProxy";
 import { resetComboRotation } from "open-sse/services/combo.js";
 import { runQuotaAutoPingTick } from "@/shared/services/quotaAutoPing";
 import bcrypt from "bcryptjs";
+import { requireDashboardAuth, unauthorizedResponse } from "@/lib/auth/requireDashboardAuth";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -15,7 +16,12 @@ const SETTINGS_RESPONSE_HEADERS = {
 // Secrets must never be mass-assigned from request body (CWE-915)
 const PROTECTED_SETTING_KEYS = ["password", "mitmSudoEncrypted"];
 
-export async function GET() {
+export async function GET(request) {
+  const isAuthenticated = await requireDashboardAuth(request);
+  if (!isAuthenticated) {
+    return unauthorizedResponse();
+  }
+
   try {
     const settings = await getSettings();
     const { password, oidcClientSecret, ...safeSettings } = settings;
@@ -37,6 +43,11 @@ export async function GET() {
 }
 
 export async function PATCH(request) {
+  const isAuthenticated = await requireDashboardAuth(request);
+  if (!isAuthenticated) {
+    return unauthorizedResponse();
+  }
+
   try {
     const body = await request.json();
 
