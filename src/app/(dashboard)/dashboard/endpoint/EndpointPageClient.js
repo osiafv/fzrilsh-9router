@@ -669,6 +669,7 @@ export default function APIPageClient({ machineId }) {
           scopeType: "global",
           allowedModels: [],
           allowedCombos: [],
+          allocatedConnectionIds: [],
         });
         setShowAddModal(false);
       }
@@ -1324,8 +1325,9 @@ export default function APIPageClient({ machineId }) {
             resetPeriod: "monthly",
             customResetDays: null,
             scopeType: "global",
-            allowedModels: "",
-            allowedCombos: "",
+            allowedModels: [],
+            allowedCombos: [],
+            allocatedConnectionIds: [],
           });
         }}
       >
@@ -1510,8 +1512,9 @@ export default function APIPageClient({ machineId }) {
             resetPeriod: "monthly",
             customResetDays: null,
             scopeType: "global",
-            allowedModels: "",
-            allowedCombos: "",
+            allowedModels: [],
+            allowedCombos: [],
+            allocatedConnectionIds: [],
           });
         }}
       >
