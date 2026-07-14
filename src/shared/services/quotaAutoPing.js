@@ -280,6 +280,10 @@ export async function runQuotaAutoPingTick(deps = createDefaultDeps(), state = g
           state.failureCache[cacheKey(provider, conn.id)] = Date.now();
           console.warn(`[AutoPing] ${provider}:${conn.id}: ${e.message}`);
         }
+        // Small delay between connections to avoid bursting provider endpoints
+        if (targets.length > 1) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
       }
     }
   } catch (e) {
