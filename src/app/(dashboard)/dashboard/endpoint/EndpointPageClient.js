@@ -2075,15 +2075,35 @@ export default function APIPageClient({ machineId }) {
                 modelProviders.forEach(p => allowedProviders.add(p));
               }
 
-              // For combos: ideally expand to models and extract providers
-              // For now: if combos specified but no models, show all (be permissive)
-              // User can refine by also specifying models
+              // Known built-in provider IDs (not custom)
+              const KNOWN_PROVIDERS = new Set([
+                'kiro', 'cloudflare', 'anthropic', 'openai', 'gemini-cli',
+                'huggingface', 'groq', 'cohere', 'mistral', 'perplexity',
+                'deepseek', 'together', 'fireworks', 'replicate', 'codex'
+              ]);
+
+              // Check if user allows any custom provider models (server/*, etc.)
+              const hasCustomModels = keyForm.allowedModels?.some(m => {
+                const provider = parseModelProvider(m);
+                return provider && !KNOWN_PROVIDERS.has(provider);
+              });
 
               // Filter connections to only allowed providers
-              if (allowedProviders.size > 0) {
-                connectionsToShow = availableConnections.filter(c =>
-                  allowedProviders.has(c.provider)
-                );
+              if (allowedProviders.size > 0 || hasCustomModels) {
+                connectionsToShow = availableConnections.filter(c => {
+                  // Include if provider matches built-in allowed providers
+                  if (allowedProviders.has(c.provider)) return true;
+
+                  // Include ALL custom providers if user has any custom models
+                  // (can't match prefix without server data)
+                  if (hasCustomModels) {
+                    if (c.provider.startsWith('openai-compatible-')) return true;
+                    if (c.provider.startsWith('anthropic-compatible-')) return true;
+                    if (c.provider.startsWith('custom-embedding-')) return true;
+                  }
+
+                  return false;
+                });
               }
             }
 
