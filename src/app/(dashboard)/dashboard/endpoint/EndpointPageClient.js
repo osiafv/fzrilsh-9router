@@ -291,8 +291,8 @@ export default function APIPageClient({ machineId }) {
       if (keysRes.ok) {
         const keys = keysData.keys || [];
         setKeys(keys);
-        // Fetch quota for each key
-        keys.forEach(key => fetchKeyQuota(key.id));
+        // Fetch quota using batch approach
+        await fetchAllKeyQuotas(keys);
       }
     } catch (error) {
       console.log("Error fetching data:", error);
@@ -301,72 +301,81 @@ export default function APIPageClient({ machineId }) {
     }
   };
 
-  // Fetch and aggregate connection quota for a specific API key
-  const fetchKeyQuota = async (keyId) => {
-    setKeyQuotas(prev => ({...prev, [keyId]: {loading: true}}));
-
+  // Fetch and aggregate quota for all API keys in one optimized batch
+  const fetchAllKeyQuotas = async (keys) => {
     try {
-      // Fetch all active connections
-      const connRes = await fetch('/api/connections?isActive=true');
-      if (!connRes.ok) {
-        setKeyQuotas(prev => ({...prev, [keyId]: null}));
-        return;
-      }
-
-      const connData = await connRes.json();
-      const allocatedConns = connData.connections.filter(c => c.assignedToApiKeyId === keyId);
-
-      if (allocatedConns.length === 0) {
-        setKeyQuotas(prev => ({...prev, [keyId]: null}));
-        return;
-      }
-
-      // Fetch quota for each connection
-      const quotaPromises = allocatedConns.map(conn =>
-        fetch(`/api/usage/${conn.id}`)
-          .then(r => r.ok ? r.json() : null)
-          .catch(() => null)
-      );
-      const quotasData = await Promise.all(quotaPromises);
-
-      // Aggregate credit across all connections
-      // Different providers use different resource keys: "credit", "0", etc.
-      let totalUsed = 0;
-      let totalLimit = 0;
-      let hasData = false;
-
-      quotasData.forEach(quotaData => {
-        if (!quotaData?.quotas) return;
-
-        // Try common credit resource keys
-        const credit = quotaData.quotas.credit || quotaData.quotas["0"];
-
-        if (credit && credit.total !== undefined) {
-          totalUsed += credit.used || 0;
-          totalLimit += credit.total || 0;
-          hasData = true;
-        }
+      // Set loading state for all keys
+      const loadingState = {};
+      keys.forEach(key => {
+        loadingState[key.id] = {loading: true};
       });
+      setKeyQuotas(loadingState);
 
-      if (!hasData) {
-        setKeyQuotas(prev => ({...prev, [keyId]: null}));
+      // Fetch connection assignments in one call
+      const assignmentsRes = await fetch('/api/keys/credits');
+      if (!assignmentsRes.ok) {
+        console.log("Failed to fetch key credits");
         return;
       }
 
-      setKeyQuotas(prev => ({
-        ...prev,
-        [keyId]: {
-          used: totalUsed,
-          total: totalLimit,
-          loading: false
+      const { assignments } = await assignmentsRes.json();
+
+      // Process each key's quota
+      for (const key of keys) {
+        const connIds = assignments[key.id] || [];
+
+        if (connIds.length === 0) {
+          setKeyQuotas(prev => ({...prev, [key.id]: null}));
+          continue;
         }
-      }));
+
+        // Fetch quota for each assigned connection
+        const quotaPromises = connIds.map(connId =>
+          fetch(`/api/usage/${connId}`)
+            .then(r => r.ok ? r.json() : null)
+            .catch(() => null)
+        );
+        const quotasData = await Promise.all(quotaPromises);
+
+        // Aggregate credit across all connections
+        let totalUsed = 0;
+        let totalLimit = 0;
+        let hasData = false;
+
+        quotasData.forEach(quotaData => {
+          if (!quotaData?.quotas) return;
+
+          // Try common credit resource keys
+          const credit = quotaData.quotas.credit || quotaData.quotas["0"];
+
+          if (credit && credit.total !== undefined) {
+            totalUsed += credit.used || 0;
+            totalLimit += credit.total || 0;
+            hasData = true;
+          }
+        });
+
+        if (hasData) {
+          setKeyQuotas(prev => ({
+            ...prev,
+            [key.id]: {
+              used: totalUsed,
+              total: totalLimit,
+              loading: false
+            }
+          }));
+        } else {
+          setKeyQuotas(prev => ({...prev, [key.id]: null}));
+        }
+      }
     } catch (error) {
-      console.log("Error fetching quota for key:", error);
-      setKeyQuotas(prev => ({
-        ...prev,
-        [keyId]: {error: error.message, loading: false}
-      }));
+      console.log("Error fetching key quotas:", error);
+      keys.forEach(key => {
+        setKeyQuotas(prev => ({
+          ...prev,
+          [key.id]: {error: error.message, loading: false}
+        }));
+      });
     }
   };
 

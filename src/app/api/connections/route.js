@@ -9,12 +9,22 @@ export async function GET(request) {
     const { searchParams } = new URL(request.url);
     const provider = searchParams.get("provider");
     const isActive = searchParams.get("isActive");
+    const assignedOnly = searchParams.get("assignedOnly");
 
     const filter = {};
     if (provider) filter.provider = provider;
     if (isActive !== null) filter.isActive = isActive === "true";
+    // ponytail: assignedOnly filter - when we need filtering by "has assignment" not specific key
+    if (assignedOnly === "true") {
+      // Will need to filter after fetch since schema doesn't support "NOT NULL" filter
+    }
 
-    const connections = await getProviderConnections(filter);
+    let connections = await getProviderConnections(filter);
+
+    // Filter assigned connections if requested
+    if (assignedOnly === "true") {
+      connections = connections.filter(c => c.assignedToApiKeyId !== null);
+    }
 
     // Return minimal data for UI
     const mapped = connections.map(c => ({
