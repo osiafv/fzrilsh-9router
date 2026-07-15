@@ -208,8 +208,15 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   const excludeConnectionIds = new Set();
   let lastError = null;
   let lastStatus = null;
+  let clientDisconnected = false;
 
   while (true) {
+    // Stop fallback if client disconnected
+    if (clientDisconnected) {
+      log.warn("FALLBACK", "Client disconnected, stopping account fallback");
+      return errorResponse(499, "Client disconnected");
+    }
+
     const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { apiKey });
 
     // All accounts unavailable
@@ -271,6 +278,10 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       providerThinking,
       // Detect source format by endpoint + body
       sourceFormatOverride: request?.url ? detectFormatByEndpoint(new URL(request.url).pathname, body) : null,
+      onDisconnect: (reason) => {
+        clientDisconnected = true;
+        log.debug("FALLBACK", `Client disconnected during request: ${reason}`);
+      },
       onCredentialsRefreshed: async (newCreds) => {
         await updateProviderCredentials(credentials.connectionId, {
           ...newCreds,
