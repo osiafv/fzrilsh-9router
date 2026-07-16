@@ -219,7 +219,7 @@ async function probeCloudCodeAssistAccess(connection, accessToken, effectiveProx
 async function refreshOAuthToken(connection) {
   const provider = connection.provider;
   const refreshToken = connection.refreshToken;
-  if (!refreshToken) return null;
+  if (!refreshToken) return { success: false, error: "No refresh token available" };
 
   try {
     if (provider === "gemini-cli" || provider === "antigravity") {
@@ -234,13 +234,20 @@ async function refreshOAuthToken(connection) {
           refresh_token: refreshToken,
         }),
       });
-      if (!response.ok) return null;
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => "");
+        return { success: false, error: `HTTP ${response.status}: ${errorText || response.statusText}` };
+      }
       const data = await response.json();
-      return { accessToken: data.access_token, expiresIn: data.expires_in, refreshToken: data.refresh_token || refreshToken };
+      return { success: true, accessToken: data.access_token, expiresIn: data.expires_in, refreshToken: data.refresh_token || refreshToken };
     }
 
     if (provider === "codex" || provider === "grok-cli" || provider === "xai") {
-      return await refreshProviderCredentials(provider, connection, console);
+      const result = await refreshProviderCredentials(provider, connection, console);
+      if (!result) {
+        return { success: false, error: "Refresh failed (no result returned)" };
+      }
+      return { success: true, ...result };
     }
 
     if (provider === "claude") {
@@ -253,9 +260,12 @@ async function refreshOAuthToken(connection) {
           client_id: CLAUDE_CONFIG.clientId,
         }),
       });
-      if (!response.ok) return null;
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => "");
+        return { success: false, error: `HTTP ${response.status}: ${errorText || response.statusText}` };
+      }
       const data = await response.json();
-      return { accessToken: data.access_token, expiresIn: data.expires_in, refreshToken: data.refresh_token || refreshToken };
+      return { success: true, accessToken: data.access_token, expiresIn: data.expires_in, refreshToken: data.refresh_token || refreshToken };
     }
 
     if (provider === "kiro") {
@@ -270,18 +280,24 @@ async function refreshOAuthToken(connection) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ clientId, clientSecret, refreshToken, grantType: "refresh_token" }),
         });
-        if (!response.ok) return null;
+        if (!response.ok) {
+          const errorText = await response.text().catch(() => "");
+          return { success: false, error: `HTTP ${response.status}: ${errorText || response.statusText}` };
+        }
         const data = await response.json();
-        return { accessToken: data.accessToken, expiresIn: data.expiresIn || 3600, refreshToken: data.refreshToken || refreshToken };
+        return { success: true, accessToken: data.accessToken, expiresIn: data.expiresIn || 3600, refreshToken: data.refreshToken || refreshToken };
       }
       const response = await fetch(KIRO_CONFIG.socialRefreshUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json", "User-Agent": "kiro-cli/1.0.0" },
         body: JSON.stringify({ refreshToken }),
       });
-      if (!response.ok) return null;
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => "");
+        return { success: false, error: `HTTP ${response.status}: ${errorText || response.statusText}` };
+      }
       const data = await response.json();
-      return { accessToken: data.accessToken, expiresIn: data.expiresIn || 3600, refreshToken: data.refreshToken || refreshToken };
+      return { success: true, accessToken: data.accessToken, expiresIn: data.expiresIn || 3600, refreshToken: data.refreshToken || refreshToken };
     }
 
     if (provider === "qwen") {
@@ -294,9 +310,12 @@ async function refreshOAuthToken(connection) {
           client_id: QWEN_CONFIG.clientId,
         }),
       });
-      if (!response.ok) return null;
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => "");
+        return { success: false, error: `HTTP ${response.status}: ${errorText || response.statusText}` };
+      }
       const data = await response.json();
-      return { accessToken: data.access_token, expiresIn: data.expires_in, refreshToken: data.refresh_token || refreshToken };
+      return { success: true, accessToken: data.access_token, expiresIn: data.expires_in, refreshToken: data.refresh_token || refreshToken };
     }
 
     if (provider === "cline") {
@@ -309,23 +328,27 @@ async function refreshOAuthToken(connection) {
           clientType: "extension",
         }),
       });
-      if (!response.ok) return null;
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => "");
+        return { success: false, error: `HTTP ${response.status}: ${errorText || response.statusText}` };
+      }
       const payload = await response.json();
       const data = payload?.data || payload;
       const expiresIn = data?.expiresAt
         ? Math.max(1, Math.floor((new Date(data.expiresAt).getTime() - Date.now()) / 1000))
         : 3600;
       return {
+        success: true,
         accessToken: data?.accessToken,
         expiresIn,
         refreshToken: data?.refreshToken || refreshToken,
       };
     }
 
-    return null;
+    return { success: false, error: `Token refresh not supported for provider: ${provider}` };
   } catch (err) {
     console.log(`Error refreshing ${provider} token:`, err.message);
-    return null;
+    return { success: false, error: err.message || String(err) };
   }
 }
 
@@ -349,13 +372,13 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
 
   const tokenExpired = isTokenExpired(connection);
   if (config.refreshable && tokenExpired && connection.refreshToken) {
-    const tokens = await refreshOAuthToken(connection);
-    if (tokens) {
-      accessToken = tokens.accessToken;
+    const result = await refreshOAuthToken(connection);
+    if (result.success) {
+      accessToken = result.accessToken;
       refreshed = true;
-      newTokens = tokens;
+      newTokens = { accessToken: result.accessToken, expiresIn: result.expiresIn, refreshToken: result.refreshToken };
     } else {
-      return { valid: false, error: "Token expired and refresh failed", refreshed: false };
+      return { valid: false, error: `Token expired and refresh failed: ${result.error}`, refreshed: false };
     }
   }
 
@@ -370,13 +393,14 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
     if (initial.valid) return { valid: true, error: null, refreshed, newTokens };
 
     if (initial.status === 401 && config.refreshable && !refreshed && connection.refreshToken) {
-      const tokens = await refreshOAuthToken(connection);
-      if (tokens?.accessToken) {
-        const retry = await probeCloudCodeAssistAccess(connection, tokens.accessToken, effectiveProxy);
-        if (retry.valid) return { valid: true, error: null, refreshed: true, newTokens: tokens };
-        return { valid: false, error: retry.error, refreshed: true, newTokens: tokens };
+      const result = await refreshOAuthToken(connection);
+      if (result.success && result.accessToken) {
+        const newTokens = { accessToken: result.accessToken, expiresIn: result.expiresIn, refreshToken: result.refreshToken };
+        const retry = await probeCloudCodeAssistAccess(connection, result.accessToken, effectiveProxy);
+        if (retry.valid) return { valid: true, error: null, refreshed: true, newTokens };
+        return { valid: false, error: retry.error, refreshed: true, newTokens };
       }
-      return { valid: false, error: "Token invalid or revoked", refreshed: false };
+      return { valid: false, error: `Token invalid or revoked (refresh failed: ${result.error || "unknown error"})`, refreshed: false };
     }
 
     return { valid: false, error: initial.error, refreshed };
@@ -396,14 +420,14 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
       return initial;
     }
 
-    const tokens = await refreshOAuthToken(connection);
-    if (!tokens?.accessToken) {
-      return { valid: false, error: "Token invalid or revoked", refreshed: false };
+    const result = await refreshOAuthToken(connection);
+    if (!result.success || !result.accessToken) {
+      return { valid: false, error: `Token invalid or revoked (refresh failed: ${result.error || "unknown error"})`, refreshed: false };
     }
 
     refreshed = true;
-    newTokens = tokens;
-    accessToken = tokens.accessToken;
+    newTokens = { accessToken: result.accessToken, expiresIn: result.expiresIn, refreshToken: result.refreshToken };
+    accessToken = result.accessToken;
     return await tryProbe(accessToken);
   }
 
@@ -430,12 +454,13 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
     }
 
     if (res.status === 401 && config.refreshable && !refreshed && connection.refreshToken) {
-      const tokens = await refreshOAuthToken(connection);
-      if (tokens) {
-        const retryUrl = config.buildUrl ? config.buildUrl(tokens.accessToken) : testUrl;
+      const result = await refreshOAuthToken(connection);
+      if (result.success && result.accessToken) {
+        const newTokens = { accessToken: result.accessToken, expiresIn: result.expiresIn, refreshToken: result.refreshToken };
+        const retryUrl = config.buildUrl ? config.buildUrl(result.accessToken) : testUrl;
         const retryHeaders = config.noAuth
           ? { ...config.extraHeaders }
-          : { [config.authHeader]: `${config.authPrefix}${tokens.accessToken}`, ...config.extraHeaders };
+          : { [config.authHeader]: `${config.authPrefix}${result.accessToken}`, ...config.extraHeaders };
         const retryOpts = { method: config.method, headers: retryHeaders };
         if (config.body) retryOpts.body = config.body;
         const retryRes = await fetchWithConnectionProxy(retryUrl, retryOpts, effectiveProxy);
@@ -447,11 +472,11 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
             error: retryClassified.soft ? retryClassified.error : null,
             warning: retryClassified.soft ? retryClassified.error : null,
             refreshed: true,
-            newTokens: tokens,
+            newTokens,
           };
         }
       }
-      return { valid: false, error: "Token invalid or revoked", refreshed: false };
+      return { valid: false, error: `Token invalid or revoked (refresh failed: ${result.error || "unknown error"})`, refreshed: false };
     }
 
     return { valid: false, error: classified.error, refreshed };

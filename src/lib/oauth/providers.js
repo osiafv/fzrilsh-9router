@@ -1408,6 +1408,7 @@ const PROVIDERS = {
         verification_uri: data.data.authUrl,
         user_code: "",
         interval: config.pollInterval / 1000,
+        expires_in: 300,
         _isCodeBuddy: true,
       };
     },
@@ -1481,6 +1482,7 @@ const PROVIDERS = {
         verification_uri: data.data.authUrl,
         user_code: "",
         interval: config.pollInterval / 1000,
+        expires_in: 300,
         _isCodeBuddyAI: true,
       };
     },
