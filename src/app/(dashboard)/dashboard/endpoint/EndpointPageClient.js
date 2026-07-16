@@ -58,6 +58,16 @@ export default function APIPageClient({ machineId }) {
   const [hasPassword, setHasPassword] = useState(true);
  const [tunnelDashboardAccess, setTunnelDashboardAccess] = useState(false);
 
+ // Token Auto-Refresh state
+  const [tokenAutoRefreshEnabled, setTokenAutoRefreshEnabled] = useState(false);
+  const [tokenAutoRefreshLastRunAt, setTokenAutoRefreshLastRunAt] = useState(null);
+  const [tokenAutoRefreshStats, setTokenAutoRefreshStats] = useState({
+    accountsChecked: 0,
+    accountsRefreshed: 0,
+    successCount: 0,
+    failureCount: 0,
+  });
+
  // Cloudflare Tunnel state
   const [tunnelChecking, setTunnelChecking] = useState(true);
   const [tunnelEnabled, setTunnelEnabled] = useState(false);
@@ -235,6 +245,16 @@ export default function APIPageClient({ machineId }) {
         setRequireLogin(data.requireLogin !== false);
         setHasPassword(data.hasPassword || false);
         setTunnelDashboardAccess(data.tunnelDashboardAccess || false);
+        
+        // Token Auto-Refresh settings
+        setTokenAutoRefreshEnabled(data.tokenAutoRefresh?.enabled || false);
+        setTokenAutoRefreshLastRunAt(data.tokenAutoRefresh?.lastRunAt || null);
+        setTokenAutoRefreshStats(data.tokenAutoRefresh?.lastRunStats || {
+          accountsChecked: 0,
+          accountsRefreshed: 0,
+          successCount: 0,
+          failureCount: 0,
+        });
       }
       if (statusRes.ok) {
         const data = await statusRes.json();
@@ -281,6 +301,29 @@ export default function APIPageClient({ machineId }) {
       if (res.ok) setRequireApiKey(value);
     } catch (error) {
       console.log("Error updating requireApiKey:", error);
+    }
+  };
+
+  const handleTokenAutoRefreshToggle = async (value) => {
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tokenAutoRefresh: {
+            enabled: value,
+            lastRunAt: tokenAutoRefreshLastRunAt,
+            lastRunStats: tokenAutoRefreshStats,
+          },
+        }),
+      });
+      if (res.ok) {
+        setTokenAutoRefreshEnabled(value);
+        // Reload settings to get updated stats
+        setTimeout(() => loadSettings(), 1000);
+      }
+    } catch (error) {
+      console.log("Error updating tokenAutoRefresh:", error);
     }
   };
 
@@ -1205,6 +1248,85 @@ export default function APIPageClient({ machineId }) {
             <div className="flex items-center gap-1.5">
               <p className="font-medium text-sm">Allow dashboard access via tunnel</p>
               <Tooltip text="When enabled, the dashboard can be accessed through your tunnel or Tailscale URL (login still required). When disabled, dashboard access via tunnel/Tailscale is completely blocked." />
+            </div>
+          </div>
+        )}
+      </Card>
+
+      {/* Token Auto-Refresh */}
+      <Card>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold flex items-center gap-2">
+            <span className="material-symbols-outlined text-primary">autorenew</span>
+            Token Auto-Refresh
+          </h2>
+        </div>
+
+        <div className="flex items-center justify-between pb-4 mb-4 border-b border-border">
+          <div>
+            <p className="font-medium">Automatic Token Refresh</p>
+            <p className="text-sm text-text-muted">
+              Automatically refresh OAuth tokens before they expire (runs every 10 minutes, 20% lifetime threshold)
+            </p>
+          </div>
+          <Toggle
+            checked={tokenAutoRefreshEnabled}
+            onChange={() => handleTokenAutoRefreshToggle(!tokenAutoRefreshEnabled)}
+          />
+        </div>
+
+        {tokenAutoRefreshEnabled && (
+          <div className="space-y-3">
+            <div className="text-sm">
+              <p className="font-medium mb-3 flex items-center gap-2">
+                <span className="material-symbols-outlined text-[18px]">info</span>
+                Status
+              </p>
+              
+              <div className="bg-surface-hover p-3 rounded-lg mb-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-text-muted text-xs">Last Run</p>
+                    <p className="font-mono text-xs mt-0.5">
+                      {tokenAutoRefreshLastRunAt 
+                        ? new Date(tokenAutoRefreshLastRunAt).toLocaleString()
+                        : 'Not yet run'}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-text-muted text-xs">Schedule</p>
+                    <p className="text-xs mt-0.5">Every 10 minutes</p>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-3 mb-3">
+                <div className="bg-surface-hover p-3 rounded-lg">
+                  <p className="text-text-muted text-xs mb-1">Accounts Checked</p>
+                  <p className="text-2xl font-semibold">{tokenAutoRefreshStats.accountsChecked}</p>
+                </div>
+                <div className="bg-surface-hover p-3 rounded-lg">
+                  <p className="text-text-muted text-xs mb-1">Accounts Refreshed</p>
+                  <p className="text-2xl font-semibold">{tokenAutoRefreshStats.accountsRefreshed}</p>
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-green-500/10 border border-green-500/20 p-3 rounded-lg flex items-center gap-2">
+                  <span className="material-symbols-outlined text-green-500 text-[20px]">check_circle</span>
+                  <div>
+                    <p className="text-text-muted text-xs">Success</p>
+                    <p className="text-lg font-semibold text-green-500">{tokenAutoRefreshStats.successCount}</p>
+                  </div>
+                </div>
+                <div className="bg-red-500/10 border border-red-500/20 p-3 rounded-lg flex items-center gap-2">
+                  <span className="material-symbols-outlined text-red-500 text-[20px]">error</span>
+                  <div>
+                    <p className="text-text-muted text-xs">Failed</p>
+                    <p className="text-lg font-semibold text-red-500">{tokenAutoRefreshStats.failureCount}</p>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         )}
