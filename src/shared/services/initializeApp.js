@@ -15,6 +15,7 @@ import {
 } from "@/lib/tunnel";
 import { getMitmStatus, startMitm, loadEncryptedPassword, initDbHooks, restoreToolDNS, removeAllDNSEntriesSync } from "@/mitm/manager";
 import { startQuotaAutoPing } from "@/shared/services/quotaAutoPing";
+import { startTokenAutoRefresh } from "@/shared/services/tokenAutoRefresh";
 import { syncToJson as syncMitmAliasCache } from "@/lib/mitmAliasCache";
 import { killAllBridges } from "@/lib/mcp/stdioSseBridge";
 
@@ -107,6 +108,7 @@ async function runHeavyStartup() {
   startNetworkMonitor();
   autoStartMitm();
   startQuotaAutoPing();
+  startTokenAutoRefresh();
 }
 
 async function autoStartMitm() {

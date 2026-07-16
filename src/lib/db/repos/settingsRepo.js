@@ -46,6 +46,16 @@ const DEFAULT_SETTINGS = {
   pxpipeAutoInstall: true,
   pxpipeMinChars: 25000,
   pxpipeTimeoutMs: 15000,
+  tokenAutoRefresh: {
+    enabled: false,
+    lastRunAt: null,
+    lastRunStats: {
+      accountsChecked: 0,
+      accountsRefreshed: 0,
+      successCount: 0,
+      failureCount: 0,
+    },
+  },
 };
 
 async function readRaw() {
