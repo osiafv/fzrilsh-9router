@@ -23,6 +23,58 @@ import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
+import { getConsistentMachineId } from "@/shared/utils/machineId";
+
+const CLI_TOKEN_HEADER = "x-9r-cli-token";
+const CLI_TOKEN_SALT = "9r-cli-auth";
+
+let cachedCliToken = null;
+async function getCliToken() {
+  if (!cachedCliToken) cachedCliToken = await getConsistentMachineId(CLI_TOKEN_SALT);
+  return cachedCliToken;
+}
+
+/**
+ * Check if request has valid CLI token (internal request from dashboard/CLI)
+ */
+async function hasValidCliToken(request) {
+  const token = request.headers.get(CLI_TOKEN_HEADER);
+  if (!token) return false;
+  return token === await getCliToken();
+}
+
+/**
+ * Check if request is from localhost
+ */
+function isLocalRequest(request) {
+  const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
+  
+  function isLoopbackHostname(h) {
+    if (!h) return false;
+    const name = h.split(":")[0].replace(/^\[|\]$/g, "").toLowerCase();
+    return LOOPBACK_HOSTS.has(name);
+  }
+
+  // Via proxy check
+  if (request.headers.get("x-9r-via-proxy")) return false;
+  
+  // Real IP from socket
+  const realIp = request.headers.get("x-9r-real-ip");
+  if (realIp) {
+    if (!isLoopbackHostname(realIp)) return false;
+  } else if (!isLoopbackHostname(request.headers.get("host"))) {
+    return false;
+  }
+  
+  const origin = request.headers.get("origin");
+  if (origin) {
+    try {
+      if (!isLoopbackHostname(new URL(origin).hostname)) return false;
+    } catch { return false; }
+  }
+  
+  return true;
+}
 
 /**
  * Handle chat completion request
@@ -82,8 +134,10 @@ export async function handleChat(request, clientRawRequest = null) {
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
   }
 
-  // Check API key scope and limits (if API key is provided)
-  if (apiKey) {
+  // Check API key scope and limits (if API key is provided and not internal request)
+  // Internal requests (dashboard model tests, CLI) bypass model restrictions
+  const isInternalRequest = await hasValidCliToken(request) && isLocalRequest(request);
+  if (apiKey && !isInternalRequest) {
     const accessCheck = await validateApiKeyAccess(apiKey, modelStr);
     if (!accessCheck.allowed) {
       log.warn("API_KEY_LIMITS", "Access denied", {
@@ -93,6 +147,11 @@ export async function handleChat(request, clientRawRequest = null) {
       });
       return errorResponse(HTTP_STATUS.TOO_MANY_REQUESTS, accessCheck.error);
     }
+  } else if (isInternalRequest && apiKey) {
+    log.debug("API_KEY_LIMITS", "Bypassing model restrictions for internal request", {
+      apiKey: log.maskKey(apiKey),
+      model: modelStr
+    });
   }
 
   // Bypass naming/warmup requests before combo rotation to avoid wasting rotation slots
