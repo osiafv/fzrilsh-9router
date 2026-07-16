@@ -1,50 +1,50 @@
 export default {
-  id: "codebuddy-cn",
-  // Short model prefix (cbcn/glm-5.2). "cbcn" = CodeBuddy CN; reserve "cbai"
-  // for a future codebuddy-int (intl) provider. The full id still resolves.
-  alias: "cbcn",
-  uiAlias: "cbcn",
+  id: "codebuddy-int",
+  // Short model prefix (cbint/glm-5.2). "cbint" = CodeBuddy International.
+  alias: "cbint",
+  uiAlias: "cbint",
   hidden: false,
-  priority: 90,
+  priority: 91,
   display: {
-    name: "CodeBuddy CN",
+    name: "CodeBuddy INT",
     icon: "smart_toy",
     color: "#006EFF",
-    website: "https://copilot.tencent.com",
+    website: "https://www.codebuddy.ai",
     notice: {
-      signupUrl: "https://copilot.tencent.com",
+      signupUrl: "https://www.codebuddy.ai",
     },
   },
   category: "oauth",
   authModes: ["oauth", "apikey"],
   hasOAuth: true,
   transport: {
-    baseUrl: "https://copilot.tencent.com/v2/chat/completions",
+    baseUrl: "https://www.codebuddy.ai/v2/chat/completions",
     forceStream: true,
     // CodeBuddy is a unified OpenAI-compatible gateway: every model (GLM, Kimi,
     // MiniMax, DeepSeek, Hunyuan) takes reasoning via OpenAI-style reasoning_effort,
     // not its vendor-native thinking shape. Force the openai thinking format.
     thinkingFormat: "openai",
     headers: {
-      "User-Agent": "CLI/2.108.1 CodeBuddy/2.108.1",
+      "User-Agent": "CLI/2.122.0 CodeBuddy/2.122.0",
       "X-Product": "SaaS",
       "X-IDE-Type": "CLI",
       "X-IDE-Name": "CLI",
       "x-requested-with": "XMLHttpRequest",
       "x-codebuddy-request": "1",
+      "X-Domain": "www.codebuddy.ai",
     },
     auth: {
       combined: true,
       header: "Authorization",
       scheme: "bearer",
     },
-    // Quota endpoint differs from the chat gateway: POST returns nested Tencent
-    // billing payload (data.Response.Data.Accounts[]). See services/usage/codebuddy-cn.js.
+    // Quota endpoint for international version
     usage: {
-      url: "https://copilot.tencent.com/v2/billing/meter/get-user-resource",
+      url: "https://www.workbuddy.ai/billing/meter/get-user-resource",
     },
   },
   models: [
+    { id: "gpt-5.5", name: "GPT-5.5" },
     { id: "glm-5.2", name: "GLM-5.2" },
     { id: "glm-5.1", name: "GLM-5.1" },
     { id: "glm-5.0", name: "GLM-5.0" },
@@ -62,11 +62,11 @@ export default {
     { id: "deepseek-v3-2-volc", name: "DeepSeek-V3.2" },
   ],
   oauth: {
-    baseUrl: "https://copilot.tencent.com",
-    stateUrl: "https://copilot.tencent.com/v2/plugin/auth/state",
-    tokenUrl: "https://copilot.tencent.com/v2/plugin/auth/token",
-    refreshUrl: "https://copilot.tencent.com/v2/plugin/auth/token/refresh",
-    userAgent: "CLI/2.63.2 CodeBuddy/2.63.2",
+    baseUrl: "https://www.codebuddy.ai",
+    stateUrl: "https://www.codebuddy.ai/v2/plugin/auth/state",
+    tokenUrl: "https://www.codebuddy.ai/v2/plugin/auth/token",
+    refreshUrl: "https://www.codebuddy.ai/v2/plugin/auth/token/refresh",
+    userAgent: "CLI/2.122.0 CodeBuddy/2.122.0",
     platform: "CLI",
     pollInterval: 5000,
   },

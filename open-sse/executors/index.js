@@ -20,6 +20,7 @@ import { CommandCodeExecutor } from "./commandcode.js";
 import { XiaomiTokenplanExecutor } from "./xiaomi-tokenplan.js";
 import { MimoFreeExecutor } from "./mimo-free.js";
 import { CodeBuddyExecutor } from "./codebuddy-cn.js";
+import { CodeBuddyIntExecutor } from "./codebuddy-int.js";
 import { DefaultExecutor } from "./default.js";
 
 const executors = {
@@ -50,6 +51,7 @@ const executors = {
   "mimo-free": new MimoFreeExecutor(),
   mmf: new MimoFreeExecutor(), // Alias for mimo-free
   "codebuddy-cn": new CodeBuddyExecutor(),
+  "codebuddy-int": new CodeBuddyIntExecutor(),
 };
 
 const defaultCache = new Map();
@@ -88,3 +90,4 @@ export { CommandCodeExecutor } from "./commandcode.js";
 export { XiaomiTokenplanExecutor } from "./xiaomi-tokenplan.js";
 export { MimoFreeExecutor } from "./mimo-free.js";
 export { CodeBuddyExecutor } from "./codebuddy-cn.js";
+export { CodeBuddyIntExecutor } from "./codebuddy-int.js";

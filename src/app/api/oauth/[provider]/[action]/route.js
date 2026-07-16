@@ -157,6 +157,7 @@ export async function GET(request, { params }) {
         "kimi-coding",
         "kilocode",
         "codebuddy-cn",
+        "codebuddy-int",
         "qoder",
         "grok-cli",
       ];
@@ -279,7 +280,7 @@ export async function POST(request, { params }) {
       }
 
       // Providers that don't use PKCE for device code
-      const noPkceProviders = ["github", "kimi-coding", "kilocode", "codebuddy-cn"];
+      const noPkceProviders = ["github", "kimi-coding", "kilocode", "codebuddy-cn", "codebuddy-int"];
       let result;
       if (noPkceProviders.includes(provider)) {
         result = await pollForToken(provider, deviceCode);
@@ -304,7 +305,7 @@ export async function POST(request, { params }) {
 
       if (result.success) {
         // Save to database
-        const connection = await createProviderConnection({
+        const dataToSave = {
           provider,
           authType: "oauth",
           ...result.tokens,
@@ -312,7 +313,9 @@ export async function POST(request, { params }) {
             ? new Date(Date.now() + result.tokens.expiresIn * 1000).toISOString() 
             : null,
           testStatus: "active",
-        });
+        };
+        console.log(`[OAuth ${provider}] Data to save:`, JSON.stringify(dataToSave, null, 2));
+        const connection = await createProviderConnection(dataToSave);
 
         return NextResponse.json({ 
           success: true, 

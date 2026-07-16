@@ -13,7 +13,7 @@ const OPTIONAL_FIELDS = [
 function rowToConn(row) {
   if (!row) return null;
   const extra = parseJson(row.data, {});
-  return {
+  const result = {
     ...extra,
     id: row.id,
     provider: row.provider,
@@ -26,11 +26,12 @@ function rowToConn(row) {
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
+  return result;
 }
 
 function connToRow(c) {
   const { id, provider, authType, name, email, priority, isActive, assignedToApiKeyId, createdAt, updatedAt, ...rest } = c;
-  return {
+  const result = {
     id,
     provider,
     authType,
@@ -43,6 +44,7 @@ function connToRow(c) {
     createdAt,
     updatedAt,
   };
+  return result;
 }
 
 function upsert(db, c) {
