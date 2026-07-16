@@ -26,6 +26,7 @@ import {
   CLINEPASS_CONFIG,
   GITLAB_CONFIG,
   CODEBUDDY_CONFIG,
+  CODEBUDDY_AI_CONFIG,
   KIMCHI_CONFIG,
   GROK_CLI_CONFIG,
   getOAuthClientMetadata,
@@ -112,12 +113,22 @@ const PROVIDERS = {
 
       return await response.json();
     },
-    mapTokens: (tokens) => ({
-      accessToken: tokens.access_token,
-      refreshToken: tokens.refresh_token,
-      expiresIn: tokens.expires_in,
-      scope: tokens.scope,
-    }),
+    mapTokens: (tokens) => {
+      const account = tokens._codeBuddyAccount || {};
+      const email = account.nickname || null;
+      return {
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token,
+        expiresIn: tokens.expires_in || 86400,
+        email,
+        providerSpecificData: {
+          uid: account.uid || "",
+          nickname: account.nickname || "",
+          uin: account.uin || "",
+          type: account.type || "",
+        },
+      };
+    },
   },
 
   codex: {
@@ -805,12 +816,21 @@ const PROVIDERS = {
         data: await response.json(),
       };
     },
-    mapTokens: (tokens) => ({
-      accessToken: tokens.access_token,
-      refreshToken: tokens.refresh_token,
-      expiresIn: tokens.expires_in,
-      providerSpecificData: { resourceUrl: tokens.resource_url },
-    }),
+    mapTokens: (tokens) => {
+      const account = tokens._codeBuddyAccount || {};
+      return {
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token,
+        expiresIn: tokens.expires_in || 86400,
+        email: account.nickname || null,
+        providerSpecificData: account.uid ? {
+          uid: account.uid,
+          nickname: account.nickname,
+          uin: account.uin,
+          type: account.type,
+        } : {},
+      };
+    },
   },
 
   github: {
@@ -1431,6 +1451,128 @@ const PROVIDERS = {
       expiresIn: tokens.expires_in || 86400,
       providerSpecificData: {},
     }),
+  },
+
+  "codebuddy-int": {
+    config: CODEBUDDY_AI_CONFIG,
+    flowType: "device_code",
+    requestDeviceCode: async (config) => {
+      const response = await fetch(`${config.stateUrl}?platform=${config.platform}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          "User-Agent": config.userAgent,
+          "X-Requested-With": "XMLHttpRequest",
+          "X-Domain": "www.codebuddy.ai",
+          "X-No-Authorization": "true",
+          "X-No-User-Id": "true",
+          "X-Product": "SaaS",
+        },
+        body: "{}",
+      });
+      if (!response.ok) throw new Error(`CodeBuddy AI state request failed: ${await response.text()}`);
+      const data = await response.json();
+      if (data.code !== 0 || !data.data?.state || !data.data?.authUrl) {
+        throw new Error(`CodeBuddy AI state error: ${data.msg || "missing state/authUrl"}`);
+      }
+      return {
+        device_code: data.data.state,
+        verification_uri: data.data.authUrl,
+        user_code: "",
+        interval: config.pollInterval / 1000,
+        _isCodeBuddyAI: true,
+      };
+    },
+    pollToken: async (config, deviceCode) => {
+      const response = await fetch(`${config.tokenUrl}?state=${encodeURIComponent(deviceCode)}`, {
+        method: "GET",
+        headers: {
+          Accept: "application/json",
+          "User-Agent": config.userAgent,
+          "X-Requested-With": "XMLHttpRequest",
+          "X-Domain": "www.codebuddy.ai",
+          "X-No-Authorization": "true",
+          "X-No-User-Id": "true",
+          "X-No-Enterprise-Id": "true",
+          "X-No-Department-Info": "true",
+          "X-Product": "SaaS",
+        },
+      });
+      if (!response.ok) return { ok: false, data: { error: "request_failed" } };
+      const data = await response.json();
+      // code 11217 = pending (RetryFetchToken), code 0 = success
+      if (data.code === 0 && data.data?.accessToken) {
+        // Fetch account details
+        let accountInfo = {};
+        try {
+          // Extract user ID from JWT token (sub claim)
+          let userId = "";
+          try {
+            const tokenParts = data.data.accessToken.split(".");
+            if (tokenParts.length === 3) {
+              const payload = JSON.parse(Buffer.from(tokenParts[1], "base64").toString("utf8"));
+              userId = payload.sub || "";
+            }
+          } catch (jwtErr) {
+          }
+
+          const headers = {
+            Accept: "application/json, text/plain, */*",
+            Authorization: `Bearer ${data.data.accessToken}`,
+            "X-Requested-With": "XMLHttpRequest",
+            "X-Domain": "www.codebuddy.ai",
+            "X-Product": "SaaS",
+            "User-Agent": config.userAgent,
+          };
+          if (userId) headers["X-User-Id"] = userId;
+
+          const accountRes = await fetch("https://www.codebuddy.ai/v2/plugin/accounts", {
+            method: "GET",
+            headers,
+          });
+          if (accountRes.ok) {
+            const accountData = await accountRes.json();
+            if (accountData.code === 0 && accountData.data?.accounts?.[0]) {
+              accountInfo = accountData.data.accounts[0];
+            } else {
+            }
+          } else {
+            const errText = await accountRes.text();
+          }
+        } catch (err) {
+        }
+
+        return {
+          ok: true,
+          data: {
+            access_token: data.data.accessToken,
+            refresh_token: data.data.refreshToken || "",
+            token_type: data.data.tokenType || "Bearer",
+            expires_in: data.data.expiresIn,
+            _codeBuddyAccount: accountInfo,
+          },
+        };
+      }
+      if (data.code === 11217) return { ok: true, data: { error: "authorization_pending" } };
+      return { ok: false, data: { error: data.msg || "unknown_error" } };
+    },
+    mapTokens: (tokens) => {
+      const account = tokens._codeBuddyAccount || {};
+      const result = {
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token,
+        expiresIn: tokens.expires_in || 86400,
+        email: account.nickname || null,
+        providerSpecificData: account.uid ? {
+          uid: account.uid,
+          nickname: account.nickname,
+          uin: account.uin,
+          type: account.type,
+        } : {},
+      };
+      return result;
+    },
   },
 
   kimchi: {

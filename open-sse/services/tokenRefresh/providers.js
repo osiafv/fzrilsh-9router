@@ -622,3 +622,68 @@ export async function refreshCodebuddyToken(refreshToken, log) {
     };
   }, log);
 }
+
+export async function refreshCodebuddyIntToken(refreshToken, accessToken, providerSpecificData, log) {
+  if (!refreshToken) return null;
+  return dedupRefresh("codebuddy-int", refreshToken, async () => {
+    const oauth = PROVIDER_OAUTH["codebuddy-int"] || {};
+    const uid = providerSpecificData?.uid;
+    
+    const headers = {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      "User-Agent": oauth.userAgent,
+      "X-Requested-With": "XMLHttpRequest",
+      "X-Domain": "www.codebuddy.ai",
+      "X-Refresh-Token": refreshToken,
+      "X-Auth-Refresh-Source": "plugin",
+      "X-Product": "SaaS",
+    };
+    
+    // Authorization header with current access token is required by the API
+    if (accessToken) {
+      headers["Authorization"] = `Bearer ${accessToken}`;
+    }
+    
+    // X-User-Id header is required (uid from providerSpecificData)
+    if (uid) {
+      headers["X-User-Id"] = uid;
+    }
+    
+    const response = await fetch(oauth.refreshUrl, {
+      method: "POST",
+      headers,
+      body: "{}",
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      log?.error?.("TOKEN_REFRESH", "Failed to refresh CodeBuddy AI token", {
+        status: response.status,
+        error: errorText,
+      });
+      return null;
+    }
+
+    const data = await response.json();
+    if (data.code !== 0 || !data.data?.accessToken) {
+      log?.error?.("TOKEN_REFRESH", "CodeBuddy AI token refresh returned no token", {
+        code: data.code,
+        msg: data.msg,
+      });
+      return null;
+    }
+
+    log?.info?.("TOKEN_REFRESH", "Successfully refreshed CodeBuddy AI token", {
+      hasNewAccessToken: !!data.data.accessToken,
+      hasNewRefreshToken: !!data.data.refreshToken,
+      expiresIn: data.data.expiresIn,
+    });
+
+    return {
+      accessToken: data.data.accessToken,
+      refreshToken: data.data.refreshToken || refreshToken,
+      expiresIn: data.data.expiresIn,
+    };
+  }, log);
+}
