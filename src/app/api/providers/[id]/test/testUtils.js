@@ -224,22 +224,27 @@ async function refreshOAuthToken(connection) {
   try {
     if (provider === "gemini-cli" || provider === "antigravity") {
       const config = provider === "gemini-cli" ? GEMINI_CONFIG : ANTIGRAVITY_CONFIG;
-      const response = await fetch("https://oauth2.googleapis.com/token", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({
-          client_id: config.clientId,
-          client_secret: config.clientSecret,
-          grant_type: "refresh_token",
-          refresh_token: refreshToken,
-        }),
-      });
-      if (!response.ok) {
-        const errorText = await response.text().catch(() => "");
-        return { success: false, error: `HTTP ${response.status}: ${errorText || response.statusText}` };
+      const endpoint = "https://oauth2.googleapis.com/token";
+      try {
+        const response = await fetch(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({
+            client_id: config.clientId,
+            client_secret: config.clientSecret,
+            grant_type: "refresh_token",
+            refresh_token: refreshToken,
+          }),
+        });
+        if (!response.ok) {
+          const errorText = await response.text().catch(() => "");
+          return { success: false, error: `HTTP ${response.status}: ${errorText || response.statusText}` };
+        }
+        const data = await response.json();
+        return { success: true, accessToken: data.access_token, expiresIn: data.expires_in, refreshToken: data.refresh_token || refreshToken };
+      } catch (fetchErr) {
+        return { success: false, error: `Network error calling ${endpoint}: ${fetchErr.message || fetchErr}` };
       }
-      const data = await response.json();
-      return { success: true, accessToken: data.access_token, expiresIn: data.expires_in, refreshToken: data.refresh_token || refreshToken };
     }
 
     if (provider === "codex" || provider === "grok-cli" || provider === "xai") {
@@ -251,21 +256,26 @@ async function refreshOAuthToken(connection) {
     }
 
     if (provider === "claude") {
-      const response = await fetch(CLAUDE_CONFIG.tokenUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Accept": "application/json" },
-        body: JSON.stringify({
-          grant_type: "refresh_token",
-          refresh_token: refreshToken,
-          client_id: CLAUDE_CONFIG.clientId,
-        }),
-      });
-      if (!response.ok) {
-        const errorText = await response.text().catch(() => "");
-        return { success: false, error: `HTTP ${response.status}: ${errorText || response.statusText}` };
+      const endpoint = CLAUDE_CONFIG.tokenUrl;
+      try {
+        const response = await fetch(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Accept": "application/json" },
+          body: JSON.stringify({
+            grant_type: "refresh_token",
+            refresh_token: refreshToken,
+            client_id: CLAUDE_CONFIG.clientId,
+          }),
+        });
+        if (!response.ok) {
+          const errorText = await response.text().catch(() => "");
+          return { success: false, error: `HTTP ${response.status}: ${errorText || response.statusText}` };
+        }
+        const data = await response.json();
+        return { success: true, accessToken: data.access_token, expiresIn: data.expires_in, refreshToken: data.refresh_token || refreshToken };
+      } catch (fetchErr) {
+        return { success: false, error: `Network error calling ${endpoint}: ${fetchErr.message || fetchErr}` };
       }
-      const data = await response.json();
-      return { success: true, accessToken: data.access_token, expiresIn: data.expires_in, refreshToken: data.refresh_token || refreshToken };
     }
 
     if (provider === "kiro") {
@@ -275,10 +285,28 @@ async function refreshOAuthToken(connection) {
       const region = psd.region || connection.region;
       if (clientId && clientSecret) {
         const endpoint = `https://oidc.${region || "us-east-1"}.amazonaws.com/token`;
-        const response = await fetch(endpoint, {
+        try {
+          const response = await fetch(endpoint, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ clientId, clientSecret, refreshToken, grantType: "refresh_token" }),
+          });
+          if (!response.ok) {
+            const errorText = await response.text().catch(() => "");
+            return { success: false, error: `HTTP ${response.status}: ${errorText || response.statusText}` };
+          }
+          const data = await response.json();
+          return { success: true, accessToken: data.accessToken, expiresIn: data.expiresIn || 3600, refreshToken: data.refreshToken || refreshToken };
+        } catch (fetchErr) {
+          return { success: false, error: `Network error calling ${endpoint}: ${fetchErr.message || fetchErr}` };
+        }
+      }
+      const socialEndpoint = KIRO_CONFIG.socialRefreshUrl;
+      try {
+        const response = await fetch(socialEndpoint, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ clientId, clientSecret, refreshToken, grantType: "refresh_token" }),
+          headers: { "Content-Type": "application/json", "User-Agent": "kiro-cli/1.0.0" },
+          body: JSON.stringify({ refreshToken }),
         });
         if (!response.ok) {
           const errorText = await response.text().catch(() => "");
@@ -286,69 +314,71 @@ async function refreshOAuthToken(connection) {
         }
         const data = await response.json();
         return { success: true, accessToken: data.accessToken, expiresIn: data.expiresIn || 3600, refreshToken: data.refreshToken || refreshToken };
+      } catch (fetchErr) {
+        return { success: false, error: `Network error calling ${socialEndpoint}: ${fetchErr.message || fetchErr}` };
       }
-      const response = await fetch(KIRO_CONFIG.socialRefreshUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "User-Agent": "kiro-cli/1.0.0" },
-        body: JSON.stringify({ refreshToken }),
-      });
-      if (!response.ok) {
-        const errorText = await response.text().catch(() => "");
-        return { success: false, error: `HTTP ${response.status}: ${errorText || response.statusText}` };
-      }
-      const data = await response.json();
-      return { success: true, accessToken: data.accessToken, expiresIn: data.expiresIn || 3600, refreshToken: data.refreshToken || refreshToken };
     }
 
     if (provider === "qwen") {
-      const response = await fetch(QWEN_CONFIG.tokenUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json" },
-        body: new URLSearchParams({
-          grant_type: "refresh_token",
-          refresh_token: refreshToken,
-          client_id: QWEN_CONFIG.clientId,
-        }),
-      });
-      if (!response.ok) {
-        const errorText = await response.text().catch(() => "");
-        return { success: false, error: `HTTP ${response.status}: ${errorText || response.statusText}` };
+      const endpoint = QWEN_CONFIG.tokenUrl;
+      try {
+        const response = await fetch(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json" },
+          body: new URLSearchParams({
+            grant_type: "refresh_token",
+            refresh_token: refreshToken,
+            client_id: QWEN_CONFIG.clientId,
+          }),
+        });
+        if (!response.ok) {
+          const errorText = await response.text().catch(() => "");
+          return { success: false, error: `HTTP ${response.status}: ${errorText || response.statusText}` };
+        }
+        const data = await response.json();
+        return { success: true, accessToken: data.access_token, expiresIn: data.expires_in, refreshToken: data.refresh_token || refreshToken };
+      } catch (fetchErr) {
+        return { success: false, error: `Network error calling ${endpoint}: ${fetchErr.message || fetchErr}` };
       }
-      const data = await response.json();
-      return { success: true, accessToken: data.access_token, expiresIn: data.expires_in, refreshToken: data.refresh_token || refreshToken };
     }
 
     if (provider === "cline") {
-      const response = await fetch(CLINE_CONFIG.refreshUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({
-          refreshToken,
-          grantType: "refresh_token",
-          clientType: "extension",
-        }),
-      });
-      if (!response.ok) {
-        const errorText = await response.text().catch(() => "");
-        return { success: false, error: `HTTP ${response.status}: ${errorText || response.statusText}` };
+      const endpoint = CLINE_CONFIG.refreshUrl;
+      try {
+        const response = await fetch(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({
+            refreshToken,
+            grantType: "refresh_token",
+            clientType: "extension",
+          }),
+        });
+        if (!response.ok) {
+          const errorText = await response.text().catch(() => "");
+          return { success: false, error: `HTTP ${response.status}: ${errorText || response.statusText}` };
+        }
+        const payload = await response.json();
+        const data = payload?.data || payload;
+        const expiresIn = data?.expiresAt
+          ? Math.max(1, Math.floor((new Date(data.expiresAt).getTime() - Date.now()) / 1000))
+          : 3600;
+        return {
+          success: true,
+          accessToken: data?.accessToken,
+          expiresIn,
+          refreshToken: data?.refreshToken || refreshToken,
+        };
+      } catch (fetchErr) {
+        return { success: false, error: `Network error calling ${endpoint}: ${fetchErr.message || fetchErr}` };
       }
-      const payload = await response.json();
-      const data = payload?.data || payload;
-      const expiresIn = data?.expiresAt
-        ? Math.max(1, Math.floor((new Date(data.expiresAt).getTime() - Date.now()) / 1000))
-        : 3600;
-      return {
-        success: true,
-        accessToken: data?.accessToken,
-        expiresIn,
-        refreshToken: data?.refreshToken || refreshToken,
-      };
     }
 
     return { success: false, error: `Token refresh not supported for provider: ${provider}` };
   } catch (err) {
-    console.log(`Error refreshing ${provider} token:`, err.message);
-    return { success: false, error: err.message || String(err) };
+    const errorMsg = err.message || String(err);
+    console.log(`Error refreshing ${provider} token:`, errorMsg);
+    return { success: false, error: `${provider} refresh error: ${errorMsg}` };
   }
 }
 
