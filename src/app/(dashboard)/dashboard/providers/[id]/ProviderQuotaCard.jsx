@@ -16,14 +16,14 @@ export default function ProviderQuotaCard({ providerId }) {
       setLoading(true);
       setError(null);
 
-      const connectionsRes = await fetch("/api/connections");
+      const connectionsRes = await fetch(`/api/providers/client?provider=${providerId}`);
       if (!connectionsRes.ok) {
         throw new Error("Failed to fetch connections");
       }
 
       const connectionsData = await connectionsRes.json();
-      const providerConnections = connectionsData.connections.filter(
-        (c) => c.provider === providerId && c.isActive !== false
+      const providerConnections = (connectionsData.connections || []).filter(
+        (c) => c.isActive !== false
       );
 
       if (providerConnections.length === 0) {
