@@ -32,7 +32,7 @@ export default function ProviderQuotaCard({ providerId }) {
       }
 
       const quotaRes = await fetch(
-        `/api/usage/quota?provider=${providerId}&connectionId=${providerConnections[0].id}`
+        `/api/usage/${providerConnections[0].id}`
       );
 
       if (!quotaRes.ok) {
