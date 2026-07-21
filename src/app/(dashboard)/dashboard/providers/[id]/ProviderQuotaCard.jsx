@@ -33,7 +33,9 @@ export default function ProviderQuotaCard({ providerId }) {
 
       const allQuotas = [];
 
-      for (const connection of providerConnections) {
+      for (let i = 0; i < providerConnections.length; i++) {
+        const connection = providerConnections[i];
+        
         try {
           const quotaRes = await fetch(`/api/usage/${connection.id}`);
           
@@ -56,6 +58,10 @@ export default function ProviderQuotaCard({ providerId }) {
           }
         } catch (err) {
           console.warn(`Error fetching quota for connection ${connection.id}:`, err);
+        }
+
+        if (i < providerConnections.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 500));
         }
       }
       
