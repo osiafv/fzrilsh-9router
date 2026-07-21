@@ -21,7 +21,6 @@ import AddApiKeyModal from "./AddApiKeyModal";
 import EditCompatibleNodeModal from "./EditCompatibleNodeModal";
 import AddCustomModelModal from "./AddCustomModelModal";
 import BulkImportCodexModal from "./BulkImportCodexModal";
-import ProviderQuotaCard from "./ProviderQuotaCard";
 
 const ONE_BY_ONE_DELAY_MS = 1000;
 
@@ -1374,9 +1373,6 @@ export default function ProviderDetailPage() {
           </div>
         </Card>
       )}
-
-      {/* Quota Status */}
-      <ProviderQuotaCard providerId={providerId} />
 
       {/* Connections */}
       {isFreeNoAuth ? (

@@ -1,0 +1,37 @@
+GET https://openapi.qoder.sh/api/v2/activity/claim/eligibility HTTP/2.0
+accept: application/json
+authorization: Bearer dt-jT1p2RVXagNcGuDBEqjOVVMv
+cosy-version: 1.15.1
+cosy-machinetoken: P1gAWAH3a76audafj7a0Tl3GpF5VeeAeqmhxlCPopJrYkgICll7aAAdoEREGXVnvLSUyQOAxsMJo6f833htA_zyv
+cosy-machinetype: 96e5b14d91110cb8dc
+cosy-machineos: aarch64_darwin
+cosy-clienttype: 0
+accept-language: en-US
+sec-fetch-site: none
+sec-fetch-mode: no-cors
+sec-fetch-dest: empty
+user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Qoder/1.15.1 Chrome/148.0.7778.97 Electron/42.2.0 Safari/537.36
+accept-encoding: gzip, deflate, br, zstd
+priority: u=4, i
+
+
+
+HTTP/2.0 200 
+date: Mon, 20 Jul 2026 07:59:47 GMT
+content-type: application/json;charset=UTF-8
+ga-request-id: 87370d98846d047fff2e4bc912eff57d
+vary: Accept-Encoding
+entry-timestamp: 1784534387783
+access-control-expose-headers: TraceId
+sw-trace-id: f9a4a2bbd2c54b70fa6c3a62d49fbc4c
+leave-timestamp: 1784534387808
+req-cost-time: 30
+req-arrive-time: 1784534387779
+resp-start-time: 1784534387809
+x-envoy-upstream-service-time: 26
+x-request-id: 208fbab5-146b-45fb-8e31-2186c1d0df69
+x-real-ip: 114.10.116.173
+ga-ap: ap-southeast-5
+content-length: 174
+
+{"code":0,"msg":"ok","data":[{"activityId":"ultimate_200_free_invoke","canClaim":false,"reason":"USER_NOT_ELIGIBLE","claimStartAt":1783353600000,"claimEndAt":1785427140000}]}
