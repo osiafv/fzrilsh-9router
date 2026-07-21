@@ -14,6 +14,7 @@ import { resolveCopilotModels } from "open-sse/services/copilotModels.js";
 import { resolveClinepassModels } from "open-sse/services/clinepassModels.js";
 import { updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { capabilitiesFromServiceKind } from "open-sse/providers/capabilities.js";
+import { getApiKeyRecord } from "@/sse/services/apiKeyLimits.js";
 
 // Per-provider live model resolvers. Each receives a connection record and
 // returns { models: [{ id, name? }, ...] } | null on failure.
@@ -459,6 +460,56 @@ export async function buildModelsList(kindFilter) {
 }
 
 /**
+ * Extract API key from request headers
+ */
+export function extractApiKey(request) {
+  const authHeader = request.headers.get("Authorization");
+  if (authHeader?.startsWith("Bearer ")) return authHeader.slice(7);
+  const apiKeyHeader = request.headers.get("x-api-key");
+  if (apiKeyHeader) return apiKeyHeader;
+  const googleApiKeyHeader = request.headers.get("x-goog-api-key");
+  if (googleApiKeyHeader) return googleApiKeyHeader;
+  const url = new URL(request.url);
+  return url.searchParams.get("key") || null;
+}
+
+/**
+ * Filter models based on API key restrictions
+ */
+export function filterModelsByApiKey(models, apiKeyRecord) {
+  if (!apiKeyRecord || apiKeyRecord.scopeType === 'global') {
+    return models;
+  }
+
+  const allowedModels = apiKeyRecord.allowedModels ? JSON.parse(apiKeyRecord.allowedModels) : [];
+  const allowedCombos = apiKeyRecord.allowedCombos ? JSON.parse(apiKeyRecord.allowedCombos) : [];
+
+  if (allowedModels.length === 0 && allowedCombos.length === 0) {
+    return models;
+  }
+
+  return models.filter(model => {
+    if (model.owned_by === 'combo') {
+      return allowedCombos.includes(model.id);
+    }
+
+    if (allowedModels.includes(model.id)) {
+      return true;
+    }
+
+    const parts = model.id.split('/');
+    if (parts.length === 2) {
+      const baseModelId = parts[1];
+      if (allowedModels.includes(baseModelId)) {
+        return true;
+      }
+    }
+
+    return false;
+  });
+}
+
+/**
  * Handle CORS preflight
  */
 export async function OPTIONS() {
@@ -474,10 +525,20 @@ export async function OPTIONS() {
 /**
  * GET /v1/models - OpenAI compatible models list (LLM/chat models only by default).
  * For other capabilities use /v1/models/{kind} (image, tts, stt, embedding, image-to-text, web).
+ * Filters by API key restrictions if present.
  */
-export async function GET() {
+export async function GET(request) {
   try {
-    const data = await buildModelsList([LLM_KIND]);
+    let data = await buildModelsList([LLM_KIND]);
+
+    const apiKey = extractApiKey(request);
+    if (apiKey) {
+      const apiKeyRecord = await getApiKeyRecord(apiKey);
+      if (apiKeyRecord) {
+        data = filterModelsByApiKey(data, apiKeyRecord);
+      }
+    }
+
     return Response.json({ object: "list", data }, {
       headers: { "Access-Control-Allow-Origin": "*" },
     });
