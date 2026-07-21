@@ -28,10 +28,12 @@ export default function ProviderQuotaCard({ providerId }) {
 
       if (providerConnections.length === 0) {
         setQuotaData({ message: "No active connections for this provider" });
+        setLoading(false);
         return;
       }
 
-      const allConnectionQuotas = [];
+      const aggregatedQuotas = new Map();
+      let quotaConnectionCount = 0;
 
       for (let i = 0; i < providerConnections.length; i++) {
         const connection = providerConnections[i];
@@ -51,7 +53,39 @@ export default function ProviderQuotaCard({ providerId }) {
           const parsed = parseQuotaData(providerId, data);
           
           if (parsed && parsed.length > 0) {
-            allConnectionQuotas.push(parsed);
+            quotaConnectionCount++;
+            
+            for (const quota of parsed) {
+              const key = quota.name;
+              
+              if (!aggregatedQuotas.has(key)) {
+                aggregatedQuotas.set(key, {
+                  name: quota.name,
+                  used: 0,
+                  total: 0,
+                  resetAt: quota.resetAt,
+                  recurring: quota.recurring,
+                  count: 0,
+                });
+              }
+              
+              const agg = aggregatedQuotas.get(key);
+              agg.used += quota.used || 0;
+              agg.total += quota.total || 0;
+              agg.count += 1;
+              
+              if (quota.resetAt && (!agg.resetAt || new Date(quota.resetAt) < new Date(agg.resetAt))) {
+                agg.resetAt = quota.resetAt;
+              }
+            }
+            
+            setQuotaData({ 
+              quotas: Array.from(aggregatedQuotas.values()), 
+              connectionCount: providerConnections.length,
+              quotaConnectionCount,
+            });
+            
+            setLoading(false);
           }
         } catch (err) {
           console.warn(`Error fetching quota for connection ${connection.id}:`, err);
@@ -62,46 +96,9 @@ export default function ProviderQuotaCard({ providerId }) {
         }
       }
       
-      if (allConnectionQuotas.length === 0) {
+      if (quotaConnectionCount === 0) {
         setQuotaData({ message: "No quota data available for this provider" });
-        return;
       }
-      
-      const aggregatedQuotas = new Map();
-      
-      for (const quotas of allConnectionQuotas) {
-        for (const quota of quotas) {
-          const key = quota.name;
-          
-          if (!aggregatedQuotas.has(key)) {
-            aggregatedQuotas.set(key, {
-              name: quota.name,
-              used: 0,
-              total: 0,
-              resetAt: quota.resetAt,
-              recurring: quota.recurring,
-              count: 0,
-            });
-          }
-          
-          const agg = aggregatedQuotas.get(key);
-          agg.used += quota.used || 0;
-          agg.total += quota.total || 0;
-          agg.count += 1;
-          
-          if (quota.resetAt && (!agg.resetAt || new Date(quota.resetAt) < new Date(agg.resetAt))) {
-            agg.resetAt = quota.resetAt;
-          }
-        }
-      }
-      
-      const quotas = Array.from(aggregatedQuotas.values());
-      
-      setQuotaData({ 
-        quotas, 
-        connectionCount: providerConnections.length,
-        quotaConnectionCount: allConnectionQuotas.length,
-      });
     } catch (err) {
       console.error("Error fetching quota:", err);
       setError(err.message || "Failed to load quota data");
