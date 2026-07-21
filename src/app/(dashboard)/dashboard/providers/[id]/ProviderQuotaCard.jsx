@@ -31,27 +31,40 @@ export default function ProviderQuotaCard({ providerId }) {
         return;
       }
 
-      const quotaRes = await fetch(
-        `/api/usage/${providerConnections[0].id}`
-      );
+      const allQuotas = [];
 
-      if (!quotaRes.ok) {
-        if (quotaRes.status === 404) {
-          setQuotaData({ message: "Quota tracking not available for this provider" });
-          return;
+      for (const connection of providerConnections) {
+        try {
+          const quotaRes = await fetch(`/api/usage/${connection.id}`);
+          
+          if (!quotaRes.ok) {
+            if (quotaRes.status === 404) continue;
+            console.warn(`Failed to fetch quota for connection ${connection.id}:`, quotaRes.status);
+            continue;
+          }
+
+          const data = await quotaRes.json();
+          if (data.message) continue;
+
+          const parsed = parseQuotaData(providerId, data);
+          
+          if (parsed && parsed.length > 0) {
+            allQuotas.push({
+              connection,
+              quotas: parsed,
+            });
+          }
+        } catch (err) {
+          console.warn(`Error fetching quota for connection ${connection.id}:`, err);
         }
-        throw new Error(`Failed to fetch quota: ${quotaRes.status}`);
       }
-
-      const data = await quotaRes.json();
-      const parsed = parseQuotaData(providerId, data);
       
-      if (!parsed || parsed.length === 0) {
+      if (allQuotas.length === 0) {
         setQuotaData({ message: "No quota data available for this provider" });
         return;
       }
       
-      setQuotaData({ quotas: parsed });
+      setQuotaData({ connections: allQuotas });
     } catch (err) {
       console.error("Error fetching quota:", err);
       setError(err.message || "Failed to load quota data");
@@ -159,7 +172,7 @@ export default function ProviderQuotaCard({ providerId }) {
     );
   }
 
-  if (!quotaData?.quotas || quotaData.quotas.length === 0) {
+  if (!quotaData?.connections || quotaData.connections.length === 0) {
     return null;
   }
 
@@ -183,22 +196,39 @@ export default function ProviderQuotaCard({ providerId }) {
         </button>
       </div>
 
-      <div className="space-y-4">
-        {quotaData.quotas.map((quota, index) => {
-          const percentage = calculatePercentage(quota.used, quota.total);
-          const unlimited = quota.total === 0 || quota.total === null;
-
+      <div className="space-y-6">
+        {quotaData.connections.map((item, connIndex) => {
+          const connection = item.connection;
+          const connectionLabel = connection.name || connection.email || connection.displayName || `Connection ${connIndex + 1}`;
+          
           return (
-            <QuotaProgressBar
-              key={`${quota.name}-${index}`}
-              label={quota.name}
-              used={quota.used}
-              total={quota.total}
-              percentage={percentage}
-              unlimited={unlimited}
-              resetTime={quota.resetAt}
-              recurring={quota.recurring !== false}
-            />
+            <div key={connection.id} className="space-y-3">
+              {quotaData.connections.length > 1 && (
+                <div className="flex items-center gap-2 text-sm text-text-muted">
+                  <span className="material-symbols-outlined text-[16px]">account_circle</span>
+                  <span className="font-medium">{connectionLabel}</span>
+                </div>
+              )}
+              <div className="space-y-4">
+                {item.quotas.map((quota, quotaIndex) => {
+                  const percentage = calculatePercentage(quota.used, quota.total);
+                  const unlimited = quota.total === 0 || quota.total === null;
+
+                  return (
+                    <QuotaProgressBar
+                      key={`${connection.id}-${quota.name}-${quotaIndex}`}
+                      label={quota.name}
+                      used={quota.used}
+                      total={quota.total}
+                      percentage={percentage}
+                      unlimited={unlimited}
+                      resetTime={quota.resetAt}
+                      recurring={quota.recurring !== false}
+                    />
+                  );
+                })}
+              </div>
+            </div>
           );
         })}
       </div>
