@@ -31,7 +31,7 @@ export default function ProviderQuotaCard({ providerId }) {
         return;
       }
 
-      const allQuotas = [];
+      const allConnectionQuotas = [];
 
       for (let i = 0; i < providerConnections.length; i++) {
         const connection = providerConnections[i];
@@ -51,10 +51,7 @@ export default function ProviderQuotaCard({ providerId }) {
           const parsed = parseQuotaData(providerId, data);
           
           if (parsed && parsed.length > 0) {
-            allQuotas.push({
-              connection,
-              quotas: parsed,
-            });
+            allConnectionQuotas.push(parsed);
           }
         } catch (err) {
           console.warn(`Error fetching quota for connection ${connection.id}:`, err);
@@ -65,12 +62,46 @@ export default function ProviderQuotaCard({ providerId }) {
         }
       }
       
-      if (allQuotas.length === 0) {
+      if (allConnectionQuotas.length === 0) {
         setQuotaData({ message: "No quota data available for this provider" });
         return;
       }
       
-      setQuotaData({ connections: allQuotas });
+      const aggregatedQuotas = new Map();
+      
+      for (const quotas of allConnectionQuotas) {
+        for (const quota of quotas) {
+          const key = quota.name;
+          
+          if (!aggregatedQuotas.has(key)) {
+            aggregatedQuotas.set(key, {
+              name: quota.name,
+              used: 0,
+              total: 0,
+              resetAt: quota.resetAt,
+              recurring: quota.recurring,
+              count: 0,
+            });
+          }
+          
+          const agg = aggregatedQuotas.get(key);
+          agg.used += quota.used || 0;
+          agg.total += quota.total || 0;
+          agg.count += 1;
+          
+          if (quota.resetAt && (!agg.resetAt || new Date(quota.resetAt) < new Date(agg.resetAt))) {
+            agg.resetAt = quota.resetAt;
+          }
+        }
+      }
+      
+      const quotas = Array.from(aggregatedQuotas.values());
+      
+      setQuotaData({ 
+        quotas, 
+        connectionCount: providerConnections.length,
+        quotaConnectionCount: allConnectionQuotas.length,
+      });
     } catch (err) {
       console.error("Error fetching quota:", err);
       setError(err.message || "Failed to load quota data");
@@ -178,14 +209,21 @@ export default function ProviderQuotaCard({ providerId }) {
     );
   }
 
-  if (!quotaData?.connections || quotaData.connections.length === 0) {
+  if (!quotaData?.quotas || quotaData.quotas.length === 0) {
     return null;
   }
 
   return (
     <Card padding="md" className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold">Quota Status</h2>
+        <div>
+          <h2 className="text-lg font-semibold">Quota Status</h2>
+          {quotaData.quotaConnectionCount > 1 && (
+            <p className="text-xs text-text-muted mt-0.5">
+              Aggregated from {quotaData.quotaConnectionCount} connection{quotaData.quotaConnectionCount !== 1 ? 's' : ''}
+            </p>
+          )}
+        </div>
         <button
           onClick={handleRefresh}
           disabled={refreshing}
@@ -202,39 +240,22 @@ export default function ProviderQuotaCard({ providerId }) {
         </button>
       </div>
 
-      <div className="space-y-6">
-        {quotaData.connections.map((item, connIndex) => {
-          const connection = item.connection;
-          const connectionLabel = connection.name || connection.email || connection.displayName || `Connection ${connIndex + 1}`;
-          
-          return (
-            <div key={connection.id} className="space-y-3">
-              {quotaData.connections.length > 1 && (
-                <div className="flex items-center gap-2 text-sm text-text-muted">
-                  <span className="material-symbols-outlined text-[16px]">account_circle</span>
-                  <span className="font-medium">{connectionLabel}</span>
-                </div>
-              )}
-              <div className="space-y-4">
-                {item.quotas.map((quota, quotaIndex) => {
-                  const percentage = calculatePercentage(quota.used, quota.total);
-                  const unlimited = quota.total === 0 || quota.total === null;
+      <div className="space-y-4">
+        {quotaData.quotas.map((quota, index) => {
+          const percentage = calculatePercentage(quota.used, quota.total);
+          const unlimited = quota.total === 0 || quota.total === null;
 
-                  return (
-                    <QuotaProgressBar
-                      key={`${connection.id}-${quota.name}-${quotaIndex}`}
-                      label={quota.name}
-                      used={quota.used}
-                      total={quota.total}
-                      percentage={percentage}
-                      unlimited={unlimited}
-                      resetTime={quota.resetAt}
-                      recurring={quota.recurring !== false}
-                    />
-                  );
-                })}
-              </div>
-            </div>
+          return (
+            <QuotaProgressBar
+              key={`${quota.name}-${index}`}
+              label={quota.name}
+              used={quota.used}
+              total={quota.total}
+              percentage={percentage}
+              unlimited={unlimited}
+              resetTime={quota.resetAt}
+              recurring={quota.recurring !== false}
+            />
           );
         })}
       </div>
